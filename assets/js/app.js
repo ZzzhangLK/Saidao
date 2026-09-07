@@ -1927,6 +1927,15 @@ function renderAiLabel(contentAnalysis) {
             if (!streamer) return;
 
             streamer.cover = String(update?.cover || '').trim();
+            const liveUrl = typeof update?.liveUrl === 'string' ? update.liveUrl.trim() : '';
+            if (liveUrl && liveUrl !== streamer.streamUrl) {
+                streamer.streamUrl = liveUrl;
+                const previewCard = activeStreamerPreview?.card;
+                if (previewCard && String(previewCard.dataset.id) === String(streamer.id)) {
+                    stopStreamerPreview();
+                    startStreamerPreview(previewCard, streamer);
+                }
+            }
             updateStreamerCardCover(streamer);
         }
 
@@ -2492,6 +2501,140 @@ function renderAiLabel(contentAnalysis) {
         let hasMoreHistory = true;
         let historyLoadingIndicator = null;
         let chatVideoModal = null;
+        let replay = null;
+        let replayVersion = 0;
+        let replayPending = false;
+        const replayIncoming = new Map();
+        const replayDeletedIds = new Set();
+
+        function updateReplayBar() {
+            const bar = byId('chatReplay');
+            if (!bar) return;
+            bar.hidden = !replay && !replayPending;
+            const time = (value) => new Date(value).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false });
+            byId('chatReplayLabel').textContent = replayPending ? '聊天记录加载中'
+                : replay ? `${replay.title} · ${time(replay.target)}-${time(replay.segmentEnd)}` : '';
+            byId('chatReplayBefore').disabled = replayPending || !replay?.hasBefore;
+            byId('chatReplayAfter').disabled = replayPending || !replay?.hasAfter;
+            byId('chatReplayLatest').textContent = replayIncoming.size ? `回到最新 (${replayIncoming.size}${replayIncoming.size >= 500 ? '+' : ''})` : '回到最新';
+        }
+
+        function captureReplayMessage(data) {
+            if (!replay && !replayPending) return false;
+            replayIncoming.set(String(data.messageId || `${data.type}:${data.timestamp}:${data.content}`), data);
+            if (replayIncoming.size > 500) replayIncoming.delete(replayIncoming.keys().next().value);
+            updateReplayBar();
+            return true;
+        }
+
+        function restoreLiveMessagesAfterFailedJump() {
+            if (replay) return;
+            replayIncoming.forEach((msg) => {
+                if (replayDeletedIds.has(String(msg.messageId))) return;
+                if (msg.type === 'user') addMessageToChat(msg);
+                else addSystemMessageToChat(msg);
+            });
+            replayIncoming.clear();
+        }
+
+        function renderReplayMessages(messages) {
+            resetChatMessages();
+            chatMessageBuffer.length = 0;
+            container.querySelector('.chat-replay-empty')?.remove();
+            messages.forEach((msg) => {
+                if (replayDeletedIds.has(String(msg.messageId))) return;
+                const options = { stickToBottom: false, suppressAlert: true };
+                if (msg.type === 'status' || msg.type === 'dailyReportUpdate' || msg.type === 'system') addSystemMessageToChat(msg, options);
+                else addMessageToChat(msg, options);
+            });
+            chatFollowMode = false;
+            container.scrollTop = 0;
+            const first = getFirstChatMessageNode();
+            if (first) {
+                first.classList.add('moment-anchor');
+                setTimeout(() => first.classList.remove('moment-anchor'), 2000);
+            } else {
+                const empty = document.createElement('div');
+                empty.className = 'chat-replay-empty';
+                empty.textContent = '本页暂无可见消息，可继续翻页';
+                container.append(empty);
+            }
+        }
+
+        async function loadReplayPage(next, direction, cursor) {
+            const version = ++replayVersion;
+            replayPending = true;
+            chatFollowMode = false;
+            updateReplayBar();
+            try {
+                const params = { start: next.start, end: next.end, direction };
+                if (cursor) params.cursor = cursor;
+                else params.target = next.target;
+                const result = await ApiEndpoints.messageHistoryWindow(params);
+                if (version !== replayVersion) return;
+                if (String(result.code) !== '0' || !Array.isArray(result.data?.messages)) throw new Error('Invalid history response');
+                const page = result.data;
+                if (cursor && !page.messages.length) {
+                    if (direction === 'before') replay.hasBefore = false;
+                    else replay.hasAfter = false;
+                    return;
+                }
+                replay = { ...next, beforeCursor: page.beforeCursor, afterCursor: page.afterCursor,
+                    hasBefore: direction === 'before' ? page.hasMore : !!page.beforeCursor,
+                    hasAfter: direction === 'after' ? page.hasMore : !!page.afterCursor };
+                renderReplayMessages(page.messages);
+                window.ChatMoments?.select(replay.target);
+            } catch (error) {
+                if (version === replayVersion) Toast.show('聊天记录加载失败', 'error');
+            } finally {
+                if (version === replayVersion) {
+                    replayPending = false;
+                    restoreLiveMessagesAfterFailedJump();
+                    updateReplayBar();
+                }
+            }
+        }
+
+        async function returnToLatestChat() {
+            const version = ++replayVersion;
+            replayPending = true;
+            updateReplayBar();
+            try {
+                const result = await ApiEndpoints.messageHistory('');
+                if (version !== replayVersion) return;
+                if (String(result.code) !== '0' || !Array.isArray(result.data)) throw new Error('Invalid history response');
+                const merged = new Map();
+                [...result.data, ...replayIncoming.values()].forEach((msg) => merged.set(String(msg.messageId || `${msg.type}:${msg.timestamp}:${msg.content}`), msg));
+                const messages = [...merged.values()].sort((a, b) => String(a.messageId || '').localeCompare(String(b.messageId || ''), 'en', { numeric: true }));
+                replay = null;
+                replayIncoming.clear();
+                renderReplayMessages(messages.slice(-CHAT_MESSAGE_BUFFER_LIMIT));
+                container.querySelector('.chat-replay-empty')?.remove();
+                window.ChatMoments?.select(null);
+                replayPending = false;
+                followChatBottom();
+            } catch (error) {
+                if (version === replayVersion) Toast.show('最新消息加载失败', 'error');
+            } finally {
+                if (version === replayVersion) {
+                    replayPending = false;
+                    restoreLiveMessagesAfterFailedJump();
+                    updateReplayBar();
+                }
+            }
+        }
+
+        window.chatMomentReplay = {
+            open(segment, snapshot) {
+                loadReplayPage({ start: snapshot.start, end: snapshot.end, target: segment.start,
+                    segmentEnd: segment.end, title: segment.title }, 'after');
+            },
+            page(direction) {
+                if (!replay || replayPending) return;
+                loadReplayPage(replay, direction, direction === 'before' ? replay.beforeCursor : replay.afterCursor);
+            },
+            latest: returnToLatestChat
+        };
 
         function isChatNearBottom(threshold = CHAT_STICKY_BOTTOM_THRESHOLD) {
             return container.scrollHeight - container.scrollTop - container.clientHeight <= threshold;
@@ -2506,12 +2649,14 @@ function renderAiLabel(contentAnalysis) {
         }
 
         function followChatBottom() {
+            if (replay || replayPending) return;
             chatFollowMode = true;
             hideNewMessageAlert();
             scheduleChatScrollToBottom();
         }
 
         function syncChatFollowMode() {
+            if (replay || replayPending) { chatFollowMode = false; return; }
             chatFollowMode = isChatNearBottom(CHAT_BOTTOM_SCROLL_EPSILON);
             if (chatFollowMode) {
                 hideNewMessageAlert();
@@ -2562,6 +2707,7 @@ function renderAiLabel(contentAnalysis) {
         }
 
         function scheduleChatScrollToBottom() {
+            if (replay || replayPending) return;
             if (!chatFollowMode || chatScrollRaf) {
                 return;
             }
@@ -3474,6 +3620,12 @@ function renderAiLabel(contentAnalysis) {
         // 将已存在的消息节点直接移除
         function markChatMessageDeleted(messageId) {
             if (!messageId) return;
+            replayDeletedIds.add(String(messageId));
+            if (replayDeletedIds.size > 1000) replayDeletedIds.delete(replayDeletedIds.values().next().value);
+            replayIncoming.delete(String(messageId));
+            const bufferedIndex = chatMessageBuffer.findIndex((item) => item.id === String(messageId));
+            if (bufferedIndex >= 0) chatMessageBuffer.splice(bufferedIndex, 1);
+            window.ChatMoments?.invalidate();
             const node = container.querySelector(
                 `.chat-message[data-message-id="${messageId}"]`
             );
@@ -3601,7 +3753,9 @@ function renderAiLabel(contentAnalysis) {
         }
 
         async function loadOlderMessages() {
+            if (replay || replayPending) return;
             if (isLoadingHistory || !hasMoreHistory) return;
+            const version = replayVersion;
 
             const topMessageId = getTopMessageId();
             if (!topMessageId) return;
@@ -3614,6 +3768,7 @@ function renderAiLabel(contentAnalysis) {
 
             try {
                 const result = await ApiEndpoints.messageHistory(topMessageId);
+                if (version !== replayVersion) return;
                 const messages = normalizeHistoryMessages(result);
                 if (!messages.length) {
                     hasMoreHistory = false;
@@ -3694,8 +3849,12 @@ function renderAiLabel(contentAnalysis) {
 
                 if (data.type === 'user') {
                     // 添加消息到聊天室
-                    addMessageToChat(data);
+                    if (!captureReplayMessage(data)) addMessageToChat(data);
                 } else if (data.type === 'history') {
+                    if (replay || replayPending) {
+                        // Reconnect history is a live snapshot, not the selected historical page.
+                        return;
+                    }
                     resetChatMessages();
                     // 添加消息到聊天室
                     data.messages.forEach(msg => {
@@ -3716,17 +3875,17 @@ function renderAiLabel(contentAnalysis) {
                 } else if (data.type === 'error') {
                     Toast.show(data.content, 'error');
                 } else if (data.type === 'system') {
-                    addSystemMessageToChat(data);
+                    if (!captureReplayMessage(data)) addSystemMessageToChat(data);
                 } else if (data.type === 'onlineCount') {
                     const onlineCount = document.getElementById('onlineCount');
                     onlineCount.textContent = `${data.count}人在线`;
                 } else if (data.type === 'hotWords') {
                     renderHotWords(data.words);
                 } else if (data.type === 'status') {
-                    addSystemMessageToChat(data);
+                    if (!captureReplayMessage(data)) addSystemMessageToChat(data);
                     fetchStreamers()
                 } else if (data.type === 'dailyReportUpdate') {
-                    addSystemMessageToChat(data);
+                    if (!captureReplayMessage(data)) addSystemMessageToChat(data);
                     fetchDailyReports();
                 } else if (data.type === 'saidaoTagUpdated') {
                     applySaidaoTagUpdate(data);
@@ -3737,6 +3896,14 @@ function renderAiLabel(contentAnalysis) {
                 } else if (data.type === 'hotScoreUpdate') {
                     applyHotScoreUpdate(data.scores);
                 } else if (data.type === 'clear') {
+                    replayVersion++;
+                    replay = null;
+                    replayPending = false;
+                    replayIncoming.clear();
+                    chatMessageBuffer.length = 0;
+                    container.querySelector('.chat-replay-empty')?.remove();
+                    updateReplayBar();
+                    window.ChatMoments?.invalidate();
                     resetChatMessages();
                 } else if (data.type === 'messageDeleted') {
                     markChatMessageDeleted(data.messageId);

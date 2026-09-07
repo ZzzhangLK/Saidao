@@ -93,6 +93,8 @@ window.ApiEndpoints = {
     uploadVoice: (data) => request('/api/voice/upload', { method: 'POST', body: data, withAuth: true, showLoading: false }),
     queryEmojis: (group) => request(`/emoji/${group}`, { withAuth: true }),
     messageHistory: (messageId) => request(`/message/history?messageId=${encodeURIComponent(messageId)}`, { withAuth: true, showLoading: false }),
+    chatMoments: () => request('/message/moments', { withAuth: true, showLoading: false }),
+    messageHistoryWindow: (params) => request(`/message/history/window?${new URLSearchParams(params)}`, { withAuth: true, showLoading: false }),
     uploadEmojis: (data) => request('/emoji/upload', { method: 'POST', body: data, withAuth: true }),
     testWebhook: (data) => request('/webhook/testWebhook', { method: 'POST', body: data, withAuth: true, fromN8N: true }),
     getCaptcha: () => request('/user/captcha'),

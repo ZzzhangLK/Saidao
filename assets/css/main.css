@@ -2016,6 +2016,24 @@
             color: var(--primary-color);
         }
 
+        #chatSidebar .chat-filter-row {
+            font-size: 12px;
+            flex-wrap: wrap;
+        }
+
+        #chatSidebar .chat-filter-row > .chat-image-filter,
+        #chatSidebar .chat-filter-row > .chat-filter-settings {
+            font: inherit;
+            line-height: 1.6;
+            white-space: nowrap;
+        }
+
+        #chatSidebar .chat-filter-row > .chat-filter-settings {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+
         .chat-filter-hint {
             margin: 0 0 14px;
             color: var(--text-light);

@@ -13,6 +13,7 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="assets/css/main.css">
+    <link rel="stylesheet" href="assets/css/chat-moments.css">
     <link rel="stylesheet" href="assets/css/sliding-captcha.css">
     <link rel="stylesheet" href="assets/css/video-room.css">
     <style>
@@ -48,6 +49,7 @@
     <script defer src="assets/js/chat-voice-utils.js"></script>
     <script defer src="assets/js/video-room.js"></script>
     <script defer src="assets/js/app.js"></script>
+    <script defer src="assets/js/chat-moments.js"></script>
 </head>
 <body>
 <div class="container">
@@ -175,6 +177,24 @@
             </button>
         </div>
         <div class="chat-hotwords" id="chatHotWords" hidden></div>
+        <div class="moments-overlay" id="chatMoments" hidden>
+            <section class="moments-panel" role="dialog" aria-modal="true" aria-labelledby="momentsTitle" tabindex="-1">
+                <div class="moments-heading">
+                    <div><strong id="momentsTitle">timeline</strong><span id="momentsRange">近 2 小时</span></div>
+                    <button id="momentsClose" type="button" title="关闭时间线" aria-label="关闭时间线"><i class="fas fa-xmark" aria-hidden="true"></i></button>
+                </div>
+                <div class="moments-status" id="momentsStatus" role="status"></div>
+                <ol class="moments-flow" id="momentsTopics" aria-label="聊天时间线"></ol>
+            </section>
+        </div>
+        <div class="chat-replay" id="chatReplay" hidden>
+            <span id="chatReplayLabel" role="status"></span>
+            <div class="chat-replay-actions">
+                <button id="chatReplayBefore" type="button" title="更早记录" aria-label="更早记录"><i class="fas fa-arrow-up" aria-hidden="true"></i></button>
+                <button id="chatReplayAfter" type="button" title="更晚记录" aria-label="更晚记录"><i class="fas fa-arrow-down" aria-hidden="true"></i></button>
+                <button id="chatReplayLatest" type="button">回到最新</button>
+            </div>
+        </div>
         <div class="chat-body" id="chatBody">
             <!-- 聊天消息将通过JavaScript动态生成 -->
         </div>
@@ -199,6 +219,10 @@
                 <button class="chat-filter-settings" id="openChatFilterModal" type="button">
                     <i class="fas fa-ban"></i>
                     屏蔽设置
+                </button>
+                <button class="chat-filter-settings" id="momentsOpen" type="button" title="打开时间线" aria-haspopup="dialog" aria-expanded="false">
+                    <i class="fas fa-timeline" aria-hidden="true"></i>
+                    时间线
                 </button>
             </div>
             <div class="chat-input-container">
