@@ -61,6 +61,7 @@
 .poll-status:not(:empty) { padding-top: 12px; padding-bottom: 12px; }
 .poll-status.is-error { color: color-mix(in srgb, var(--live-color) 80%, var(--text-primary)); }
 .poll-create { display: grid; gap: 14px; }
+.poll-create .battle-create-quota { margin: 0; font-weight: 600; }
 .poll-create label { display: grid; gap: 7px; font-size: 12px; color: var(--text-primary); }
 .poll-create textarea, .poll-create input, .poll-create select { width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-color); color: var(--text-primary); font-size: 13px; }
 .poll-create textarea { min-height: 80px; resize: vertical; }

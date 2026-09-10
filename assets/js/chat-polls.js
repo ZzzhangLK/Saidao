@@ -22,6 +22,7 @@
     let data = null, selectedId = null, creating = false, pending = false, flight = null;
     let refreshAgain = false, lastFocus = null, clockOffset = 0;
     let activeDeadlines = [];
+    let quotaRefreshRequested = null;
     const selections = new Map();
     const mobileHistory = window.matchMedia('(max-width: 768px)');
     const historyPanel = byId('pollHistoryPanel');
@@ -49,6 +50,9 @@
         badge.textContent = remaining.length ? duration(Math.ceil(Math.min(...remaining) / 1000)) : '';
         badge.title = remaining.length ? '最近一场掰头将在 ' + badge.textContent + ' 后结束' : '';
         if (!dialog.open) return;
+        if (data?.quotaResetsAt && Date.parse(data.quotaResetsAt) <= now() && quotaRefreshRequested !== data.quotaResetsAt) {
+            quotaRefreshRequested = data.quotaResetsAt; refresh();
+        }
         const countdown = byId('pollCountdown');
         if (!countdown) return;
         const poll = allPolls().find(p => p.id === selectedId);
@@ -111,10 +115,11 @@
         const atCapacity = currentPolls().filter(active).length >= 1;
         toggle.disabled = pending;
         toggle.textContent = creating ? '返回掰头' : '＋ 发起掰头';
-        toggle.title = atCapacity ? '已有一场进行中，请等待结束' : '注册满 30 天且未被封禁可发起';
+        toggle.title = atCapacity ? '已有一场进行中，请等待结束' : '登录且未被封禁可发起，每天限一次';
         renderHistory();
         if (creating) {
             if (!byId('pollCreateForm')) renderCreate();
+            updateCreateQuota();
             return;
         }
         const poll = allPolls().find(p => p.id === selectedId);
@@ -134,11 +139,12 @@
         if (isActive) { const timer = node('span'); timer.id = 'pollCountdown'; eyebrow.append(timer); }
         else eyebrow.append(node('span', '', date(poll.endsAt)));
         eyebrow.append(node('span', 'battle-creator', '发起人：' + plain(poll.creatorName || (poll.creatorId ? '用户 #' + poll.creatorId : '未知发起人'))));
-        main.append(eyebrow, node('h3', 'poll-question', plain(poll.question)), node('p', 'poll-help', voted ? '你已参与，下方标记了你的选择。' : isActive ? '选择你支持的一方' + '，每人只能提交一次，提交后不可修改。' : '掰头已结束，感谢每一份选择。'));
+        main.append(eyebrow, node('h3', 'poll-question', plain(poll.question)), node('p', 'poll-help', voted ? '你已参与，下方标记了你的选择。' : isActive ? '选择你支持的一方，每人只能提交一次；站队后可查看双方比例。' : '掰头已结束，感谢每一份选择。'));
         const choices = node('div', 'poll-choices battle-choices');
         const chosen = selections.get(poll.id) || new Set();
         const results = voted || !isActive;
-        const redPercent = poll.totalVoters ? Math.round(1000 * poll.counts[0] / poll.totalVoters) / 10 : 0;
+        const showProgress = results && poll.resultsVisible !== false && Array.isArray(poll.counts);
+        const redPercent = showProgress && poll.totalVoters ? Math.round(1000 * poll.counts[0] / poll.totalVoters) / 10 : 0;
         const percentages = [redPercent, poll.totalVoters ? Math.round(1000 - redPercent * 10) / 10 : 0];
         poll.options.slice(0, 2).forEach((option, index) => {
             const mine = poll.myOptions.includes(index);
@@ -152,12 +158,13 @@
             const indicator = node('span', 'battle-choice-indicator', '✓'); indicator.setAttribute('aria-hidden', 'true');
             label.append(check, indicator, node('span', 'battle-side-name', index === 0 ? '红方' : '蓝方'));
             label.append(node('strong', 'battle-option-text', plain(option)));
-            label.append(node('small', '', percentages[index] + '%' + (mine ? ' · 已支持' : '')));
+            if (showProgress) label.append(node('small', '', percentages[index] + '%' + (mine ? ' · 已支持' : '')));
+            else if (mine) label.append(node('small', '', '已支持'));
             choices.append(label);
         });
         const versus = node('div', 'battle-score');
         const redBar = node('span', 'battle-red-bar');
-        redBar.style.width = (poll.totalVoters ? Math.max(0, Math.min(100, poll.counts[0] / poll.totalVoters * 100)) : 50) + '%';
+        redBar.style.width = (showProgress && poll.totalVoters ? Math.max(0, Math.min(100, poll.counts[0] / poll.totalVoters * 100)) : 50) + '%';
         versus.append(redBar);
         const footer = node('div', 'poll-footer');
         footer.append(node('small', '', `${poll.totalVoters} 人参与`));
@@ -167,7 +174,9 @@
             submit.onclick = () => vote(poll.id, Array.from(chosen));
             footer.append(submit);
         }
-        main.append(choices, versus, footer);
+        main.append(choices);
+        if (showProgress) main.append(versus);
+        main.append(footer);
         tick();
         if (focusedChoice !== null) main.querySelector(`input[value="${focusedChoice}"]`)?.focus({ preventScroll: true });
         if (focusedSubmit) byId('pollSubmit')?.focus({ preventScroll: true });
@@ -201,17 +210,27 @@
         } catch (error) { status(error.message, true); }
         finally { await refresh(); pending = false; if (dialog.open && data) render(); }
     }
+    function updateCreateQuota() {
+        const label = byId('battleCreateQuota');
+        if (!label) return;
+        const remaining = data?.remainingCreates;
+        label.textContent = '今日剩余发起次数：' + (Number.isInteger(remaining) ? remaining + ' / 1' : '加载中…') + ' · 每天北京时间 00:00 刷新';
+        const submit = byId('battleCreateSubmit');
+        submit.disabled = pending || !data?.canCreate || remaining !== 1;
+        submit.textContent = pending ? '发起中…' : remaining === 0 ? '今日次数已用完' : '发起掰头';
+    }
     function renderCreate() {
         const main = byId('pollMain');
-        main.innerHTML = `<form class="poll-create" id="pollCreateForm">
-            <label>掰头标题<textarea name="question" required maxlength="200" placeholder="这件事，你站哪一边？"></textarea></label>
-            <label class="battle-red">红方观点<input name="redOption" required maxlength="80" placeholder="红方支持什么？"></label>
-            <label class="battle-blue">蓝方观点<input name="blueOption" required maxlength="80" placeholder="蓝方支持什么？"></label>
+        main.innerHTML = `<form class="poll-create" id="pollCreateForm"><p class="poll-help battle-create-quota" id="battleCreateQuota" role="status"></p>
+            <label>掰头标题<textarea name="question" required maxlength="100" placeholder="这件事，你站哪一边？"></textarea></label>
+            <label class="battle-red">红方观点<input name="redOption" required maxlength="20" placeholder="红方支持什么？"></label>
+            <label class="battle-blue">蓝方观点<input name="blueOption" required maxlength="20" placeholder="蓝方支持什么？"></label>
             <label>持续时长<select name="durationMinutes"><option value="5">5 分钟</option><option value="10">10 分钟</option><option value="30">30 分钟</option></select></label>
-            <p class="poll-help" style="margin:0">注册满 30 天且未被封禁可发起。固定单选，每人只支持一方；全局同时只能进行一场。</p>
-            <button class="poll-primary" type="submit">发起掰头</button></form>`;
+            <p class="poll-help" style="margin:0">登录且未被封禁可发起。同一账号、IP 或设备每天仅可发起一次；全局同时只能进行一场。</p>
+            <button class="poll-primary" id="battleCreateSubmit" type="submit">发起掰头</button></form>`;
         byId('pollCreateForm').onsubmit = async event => {
             event.preventDefault(); if (pending) return;
+            if (data?.remainingCreates !== 1) { window.Toast.show('今日发起次数已用完，每天北京时间 00:00 刷新', 'warning'); return; }
             const form = event.currentTarget;
             const input = { question: form.elements.question.value.trim(), options: [form.elements.redOption.value.trim(), form.elements.blueOption.value.trim()], durationMinutes: Number(form.elements.durationMinutes.value), multiple: false };
             if (!input.question || input.options.some(s => !s) || new Set(input.options).size !== input.options.length) {
@@ -254,7 +273,7 @@
             window.Toast.show('当前掰头正在进行，请等待结束后再发起。', 'warning');
             return;
         }
-        if (!creating && !data?.canCreate) { status('注册满 30 天且未被封禁的用户才能发起掰头。', true); return; }
+        if (!creating && !data?.canCreate) { status('请登录未被封禁的账号后发起掰头。', true); return; }
         creating = !creating; status(); render();
         if (creating) byId('pollCreateForm').elements.question.focus();
     };
