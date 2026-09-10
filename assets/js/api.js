@@ -1,5 +1,22 @@
 ﻿const { API_BASE_URL, N8N_BASE_URL, TOKEN_KEY } = window.SaidaoConfig;
 
+let fingerprintPromise;
+window.getFingerprint = () => {
+    if (!fingerprintPromise) fingerprintPromise = (async () => {
+        const stored = localStorage.getItem('fingerprint');
+        if (stored) return stored;
+        let fp;
+        try {
+            const agent = await window.FingerprintJS?.load();
+            fp = (await agent?.get())?.visitorId;
+        } catch (error) { console.warn('指纹生成失败，降级使用 UUID', error); }
+        fp ||= crypto.randomUUID();
+        localStorage.setItem('fingerprint', fp);
+        return fp;
+    })();
+    return fingerprintPromise;
+};
+
 async function request(url, {
     method = 'GET',
     body,
@@ -94,6 +111,10 @@ window.ApiEndpoints = {
     queryEmojis: (group) => request(`/emoji/${group}`, { withAuth: true }),
     messageHistory: (messageId) => request(`/message/history?messageId=${encodeURIComponent(messageId)}`, { withAuth: true, showLoading: false }),
     chatMoments: () => request('/message/moments', { withAuth: true, showLoading: false }),
+    chatPolls: () => request('/chat/polls', { withAuth: true, showLoading: false }),
+    chatPollStatus: () => request('/chat/polls/status', { showLoading: false }),
+    createChatPoll: (data) => request('/chat/polls', { method: 'POST', body: data, withAuth: true, showLoading: false }),
+    voteChatPoll: (id, optionIds) => request(`/chat/polls/${id}/ballots`, { method: 'POST', body: { optionIds }, withAuth: true, showLoading: false }),
     messageHistoryWindow: (params) => request(`/message/history/window?${new URLSearchParams(params)}`, { withAuth: true, showLoading: false }),
     uploadEmojis: (data) => request('/emoji/upload', { method: 'POST', body: data, withAuth: true }),
     testWebhook: (data) => request('/webhook/testWebhook', { method: 'POST', body: data, withAuth: true, fromN8N: true }),

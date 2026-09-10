@@ -14,6 +14,7 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="assets/css/main.css">
     <link rel="stylesheet" href="assets/css/chat-moments.css">
+    <link rel="stylesheet" href="assets/css/chat-polls.css">
     <link rel="stylesheet" href="assets/css/sliding-captcha.css">
     <link rel="stylesheet" href="assets/css/video-room.css">
     <style>
@@ -48,8 +49,11 @@
     <script defer src="assets/js/chat-input-utils.js"></script>
     <script defer src="assets/js/chat-voice-utils.js"></script>
     <script defer src="assets/js/video-room.js"></script>
+    <script defer src="assets/js/chat-quote-utils.js"></script>
+    <script defer src="assets/js/battle-ui.js"></script>
     <script defer src="assets/js/app.js"></script>
     <script defer src="assets/js/chat-moments.js"></script>
+    <script defer src="assets/js/chat-polls.js"></script>
 </head>
 <body>
 <div class="container">
@@ -223,6 +227,10 @@
                 <button class="chat-filter-settings" id="momentsOpen" type="button" title="打开时间线" aria-haspopup="dialog" aria-expanded="false">
                     <i class="fas fa-timeline" aria-hidden="true"></i>
                     时间线
+                </button>
+                <button class="chat-filter-settings" id="pollsOpen" type="button" title="打开掰头" aria-haspopup="dialog" aria-expanded="false">
+                    <i class="fas fa-square-poll-vertical" aria-hidden="true"></i>
+                    掰头<span class="poll-badge" id="pollsBadge" hidden></span>
                 </button>
             </div>
             <div class="chat-input-container">

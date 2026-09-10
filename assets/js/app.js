@@ -439,6 +439,7 @@ function setHotWordsCollapsed(collapsed) {
 function handleBlockImageMessagesChange(event) {
     const blocked = event.target.checked;
     localStorage.setItem(BLOCK_IMAGE_MESSAGES_KEY, String(blocked));
+    window.ChatQuoteUtils.setImagesBlocked(document, blocked);
 
     $$('.chat-message.image-message').forEach((messageElement) => {
         if (blocked) {
@@ -2462,13 +2463,24 @@ function renderAiLabel(contentAnalysis) {
         // toast.js
         const Toast = (() => {
             const container = document.getElementById('toast-container');
+            const defaultParent = container.parentElement;
 
             function show(message, type = 'info', duration = 3000) {
+                // Native modal dialogs sit above every ordinary z-index layer.
+                const modal = Array.from(document.querySelectorAll('dialog[open]')).at(-1);
+                const parent = modal || defaultParent;
+                if (container.parentElement !== parent) parent.appendChild(container);
                 const toast = document.createElement('div');
                 toast.className = `toast ${type}`;
                 toast.textContent = message;
+                toast.setAttribute('role', 'status');
 
                 container.appendChild(toast);
+                if (typeof container.showPopover === 'function') {
+                    container.setAttribute('popover', 'manual');
+                    if (container.matches(':popover-open')) container.hidePopover();
+                    container.showPopover(); // Reinsert after the dialog in the browser's top layer.
+                }
 
                 // 动画显示
                 requestAnimationFrame(() => toast.classList.add('show'));
@@ -2476,7 +2488,13 @@ function renderAiLabel(contentAnalysis) {
                 // 自动消失
                 setTimeout(() => {
                     toast.classList.remove('show');
-                    toast.addEventListener('transitionend', () => toast.remove());
+                    const remove = () => {
+                        toast.remove();
+                        if (!container.childElementCount && typeof container.hidePopover === 'function'
+                                && container.matches(':popover-open')) container.hidePopover();
+                    };
+                    toast.addEventListener('transitionend', remove, { once: true });
+                    setTimeout(remove, 400); // Also clean up when transitions are disabled or the dialog closes.
                 }, duration);
             }
 
@@ -2544,7 +2562,7 @@ function renderAiLabel(contentAnalysis) {
             messages.forEach((msg) => {
                 if (replayDeletedIds.has(String(msg.messageId))) return;
                 const options = { stickToBottom: false, suppressAlert: true };
-                if (msg.type === 'status' || msg.type === 'dailyReportUpdate' || msg.type === 'system') addSystemMessageToChat(msg, options);
+                if (msg.type === 'status' || msg.type === 'dailyReportUpdate' || msg.type === 'system' || msg.type === 'pollUpdate') addSystemMessageToChat(msg, options);
                 else addMessageToChat(msg, options);
             });
             chatFollowMode = false;
@@ -2807,37 +2825,7 @@ function renderAiLabel(contentAnalysis) {
             // 如果有引用回复，在消息上方添加引用块
             let quoteHTML = '';
             if (data.replyTo) {
-                const replyContent = data.replyTo.content || '';
-                const isImageQuote = /<img\b/i.test(replyContent);
-                const imageQuoteSrc = isImageQuote ? getFirstImageSrc(replyContent) : '';
-                const imageQuoteAttr = imageQuoteSrc ? ` data-image-src="${escapeHtml(imageQuoteSrc)}"` : '';
-                const quoteText = isImageQuote
-                    ? '<span class="quote-image-hidden">图片消息已隐藏</span>'
-                    : `${replyContent.substring(0, 50)}${replyContent.length > 50 ? '...' : ''}`;
-
-                quoteHTML = `
-                    <div class="message-quote${isImageQuote ? ' image-quote' : ''}" data-message-id="${data.replyTo.messageId}"${imageQuoteAttr} style="
-                        background-color: var(--bg-color);
-                        border-left: 3px solid var(--primary-light);
-                        border-radius: var(--radius-sm);
-                        padding: 6px 10px 6px 8px;
-                        margin-bottom: 6px;
-                        font-size: 12px;
-                        color: var(--text-secondary);
-                        cursor: pointer;
-                    ">
-                        <div style="display:flex; align-items:center; gap:6px;">
-                            <span style="color: var(--primary-color); font-weight:500;">
-                                ${data.replyTo.uname}:
-                            </span>
-                            <span style="color: var(--text-light);">
-                                ${quoteText}
-                            </span>
-                        </div>
-                    </div>
-                    `;
-                // 点击引用块可以跳转（如果后端支持并下发了 messageId）
-                // 跳转逻辑需要额外实现，例如滚动到该消息并高亮，这里先占位
+                quoteHTML = window.ChatQuoteUtils.createReply(data.replyTo, isImageMessagesBlocked()).outerHTML;
             }
 
             // 处理消息内容中的@高亮 (假设 content 中 @用户名 已被后端处理或保持原样)
@@ -2887,6 +2875,9 @@ function renderAiLabel(contentAnalysis) {
                     ${quoteHTML}
                 </div>
             `;
+
+            const battleBadge = window.BattleUi?.createBadge(data.battle);
+            if (battleBadge) messageElement.querySelector('.message-text').prepend(battleBadge);
 
             // 头像点击通过容器事件委托处理（见 chatBody 委托监听），此处不再逐条绑定
 
@@ -2976,7 +2967,7 @@ function renderAiLabel(contentAnalysis) {
         function jumpToMessage(messageId) {
 
             const target = document.querySelector(
-                `.chat-message[data-message-id="${messageId}"]`
+                `.chat-message[data-message-id="${CSS.escape(messageId)}"]`
             );
 
             if (!target) {
@@ -3022,7 +3013,7 @@ function renderAiLabel(contentAnalysis) {
             if (!messageId) return;
 
             const target = document.querySelector(
-                `.chat-message[data-message-id="${messageId}"]`
+                `.chat-message[data-message-id="${CSS.escape(messageId)}"]`
             );
             if (!target) {
                 console.warn('未找到目标消息:', messageId);
@@ -3506,10 +3497,6 @@ function renderAiLabel(contentAnalysis) {
         // 设置引用消息
         function setQuoteMessage(messageData) {
             const quoteContent = messageData.content || '';
-            const quotePreviewText = /<img\b/i.test(quoteContent)
-                ? '图片消息已隐藏'
-                : `${quoteContent.substring(0, 50)}${quoteContent.length > 50 ? '...' : ''}`;
-
             currentQuote = {
                 messageId: messageData.messageId,
                 uid: messageData.uid,
@@ -3522,12 +3509,14 @@ function renderAiLabel(contentAnalysis) {
             preview.innerHTML = `
                 <div class="quote-preview-content">
                     <div class="quote-header">
-                        <span style="font-weight:500; color: var(--primary-color);">引用 ${messageData.uname}:</span>
+                        <span style="font-weight:500; color: var(--primary-color);">引用 <span class="quote-preview-author"></span>:</span>
                         <button class="quote-cancel-btn"><i class="fas fa-times"></i></button>
                     </div>
-                    <div class="quote-text">${escapeHtml(quotePreviewText)}</div>
+                    <div class="quote-text"></div>
                 </div>
             `;
+            preview.querySelector('.quote-preview-author').textContent = window.ChatQuoteUtils.plainText(messageData.uname);
+            preview.querySelector('.quote-text').append(window.ChatQuoteUtils.createContent(quoteContent, isImageMessagesBlocked()));
             preview.style.display = 'block';
 
             // 点击关闭按钮取消引用
@@ -3627,7 +3616,7 @@ function renderAiLabel(contentAnalysis) {
             if (bufferedIndex >= 0) chatMessageBuffer.splice(bufferedIndex, 1);
             window.ChatMoments?.invalidate();
             const node = container.querySelector(
-                `.chat-message[data-message-id="${messageId}"]`
+                `.chat-message[data-message-id="${CSS.escape(messageId)}"]`
             );
             if (!node) return;
             node.remove();
@@ -3823,7 +3812,7 @@ function renderAiLabel(contentAnalysis) {
             closeChatSocket({ preventReconnect: true });
 
             const token = localStorage.getItem(TOKEN_KEY);
-            const fp = await getFingerprint();
+            const fp = await window.getFingerprint();
 
             const currentSocket = new WebSocket(`${WS_BASE_URL}/ws/chat?token=${encodeURIComponent(token || '')}&fp=${encodeURIComponent(fp)}`);
             socket = currentSocket;
@@ -3831,6 +3820,7 @@ function renderAiLabel(contentAnalysis) {
             currentSocket.addEventListener('open', () => {
                 if (socket !== currentSocket) return;
                 console.log('WebSocket连接已建立');
+                window.ChatPolls?.refresh();
             });
 
             currentSocket.addEventListener('message', (event) => {
@@ -3858,7 +3848,7 @@ function renderAiLabel(contentAnalysis) {
                     resetChatMessages();
                     // 添加消息到聊天室
                     data.messages.forEach(msg => {
-                        if (msg.type === 'status' || msg.type === 'dailyReportUpdate') {
+                        if (msg.type === 'status' || msg.type === 'dailyReportUpdate' || msg.type === 'system' || msg.type === 'pollUpdate') {
                             addSystemMessageToChat(msg, {
                                 stickToBottom: false,
                                 suppressAlert: true
@@ -3876,6 +3866,9 @@ function renderAiLabel(contentAnalysis) {
                     Toast.show(data.content, 'error');
                 } else if (data.type === 'system') {
                     if (!captureReplayMessage(data)) addSystemMessageToChat(data);
+                } else if (data.type === 'pollUpdate') {
+                    if (!captureReplayMessage(data)) addSystemMessageToChat(data);
+                    window.ChatPolls?.refresh();
                 } else if (data.type === 'onlineCount') {
                     const onlineCount = document.getElementById('onlineCount');
                     onlineCount.textContent = `${data.count}人在线`;
@@ -3953,7 +3946,6 @@ function renderAiLabel(contentAnalysis) {
 
         // 发送消息
         let pendingMessage = null;
-
         async function handleCaptchaRequired() {
             if (!window.SlidingCaptcha) {
                 console.warn('[Captcha] pendingMessage 为空，跳过');
@@ -3963,7 +3955,7 @@ function renderAiLabel(contentAnalysis) {
             console.log('[Captcha] 开始处理验证码，pendingMessage:', pendingMessage);
             
             try {
-                const fp = await getFingerprint();
+                const fp = await window.getFingerprint();
                 console.log('[Captcha] fp:', fp);
                 
                 const ticket = await window.SlidingCaptcha.getTicket(fp);
@@ -4270,43 +4262,8 @@ function renderAiLabel(contentAnalysis) {
             document.addEventListener('keydown', handleKeydown);
         }
 
-        async function getFingerprint() {
-            return new Promise((resolve, reject) => {
-                const storedFingerprint = localStorage.getItem('fingerprint');
-                if (storedFingerprint) {
-                    resolve(storedFingerprint);
-                } else {
-                    FingerprintJS.load().then(fp => {
-                        fp.get().then(result => {
-                            const fingerprint = result.visitorId;
-                            localStorage.setItem('fingerprint', fingerprint);
-                            resolve(fingerprint);
-                        }).catch(error => {
-                            console.warn('指纹生成失败，降级使用 UUID', error);
-                            const uuid = generateUUID();
-                            localStorage.setItem('fingerprint', uuid);
-                            resolve(uuid);
-                        });
-                    }).catch(error => {
-                        console.warn('FingerprintJS 加载失败，降级使用 UUID', error);
-                        const uuid = generateUUID();
-                        localStorage.setItem('fingerprint', uuid);
-                        resolve(uuid);
-                    });
-                }
-            });
-        }
 
-        function generateUUID() {
-            if (typeof crypto !== 'undefined' && crypto.randomUUID) {
-                return crypto.randomUUID();
-            }
-            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-                const r = Math.random() * 16 | 0;
-                const v = c === 'x' ? r : (r & 0x3 | 0x8);
-                return v.toString(16);
-            });
-        }
+
 
         // 应用深色模式
         function applyDarkMode() {
