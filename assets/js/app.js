@@ -3695,8 +3695,8 @@ function renderAiLabel(contentAnalysis) {
                     hideNewMessageAlert();
                 });
 
-                // 添加到侧栏，避免跟随聊天内容滚动导致不可见
-                (byId('chatSidebar') || container).appendChild(newMessageAlert)
+                // 定位在底栏上方，避免遮挡时间线等操作，也不随消息滚动。
+                (byId('chatSidebar')?.querySelector('.chat-footer') || byId('chatSidebar') || container).appendChild(newMessageAlert)
             } else {
                 // 更新已有提示的计数
                 newMessageAlert.querySelector('.new-message-btn').textContent = `有新消息 (${newMessageCount})`;

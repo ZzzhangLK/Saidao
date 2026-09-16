@@ -7,11 +7,7 @@
   const statusOverlay = document.getElementById("statusOverlay");
   const statusTitle = document.getElementById("statusTitle");
   const statusSub = document.getElementById("statusSub");
-  const soundHint = document.getElementById("soundHint");
   const streamSub = document.getElementById("streamSub");
-  const commentCount = document.getElementById("commentCount");
-  const toggleMuteBtn = document.getElementById("toggleMuteBtn");
-  const muteLabel = document.getElementById("muteLabel");
   const fullscreenBtn = document.getElementById("fullscreenBtn");
   const fullscreenLabel = document.getElementById("fullscreenLabel");
   const originBtn = document.getElementById("originBtn");
@@ -26,14 +22,25 @@
   const scrollBottomBtn = document.getElementById("scrollBottomBtn");
   const playerLayout = document.getElementById("playerLayout");
   const danmakuLayer = document.getElementById("danmakuLayer");
+  const streamerName = document.getElementById("streamerName");
+  const streamerAvatar = document.getElementById("streamerAvatar");
+  const streamerInitial = document.getElementById("streamerInitial");
+  const streamerRoom = document.getElementById("streamerRoom");
+  const liveBadge = document.getElementById("liveBadge");
+  const liveState = document.getElementById("liveState");
+  const commentEmpty = document.getElementById("commentEmpty");
+  const danmakuLabel = document.getElementById("danmakuLabel");
 
   let hls = null;
   let flvPlayer = null;
-  let hlsRestartTimer = null;
-  let totalComments = 0;
+  let streamRetryTimer = null;
+  let refreshInProgress = false;
+  let infoRequest = null;
+  let streamGeneration = 0;
   let audioUnlocked = false;
   let originUrl = "";
   const COMMENT_DELAY_MS = 5000;
+  const STREAM_RETRY_MS = 10000;
   const MAX_PENDING_COMMENTS = 500;
   const pendingComments = [];
   let wsClient = null;
@@ -41,6 +48,10 @@
   let isPageClosing = false;
   let isCommentListAtBottom = true;
   let danmakuEnabled = true;
+  const danmakuLanes = [];
+  const DANMAKU_LANE_HEIGHT = 36;
+  const DANMAKU_GAP = 32;
+  const DANMAKU_SPEED = 90;
   let streamEnded = false;
 
   const params = new URLSearchParams(window.location.search);
@@ -85,19 +96,41 @@
     tapPlayBtn.classList.remove("show");
   };
 
-  const showSoundHint = () => {
-    soundHint.classList.add("show");
-  };
-
-  const hideSoundHint = () => {
-    soundHint.classList.remove("show");
+  const syncAudioState = () => {
+    const silent = video.muted || video.volume === 0;
+    volumeBtn.querySelector("use").setAttribute("href", silent ? "#icon-volume-off" : "#icon-volume-on");
+    volumeBtn.setAttribute("aria-label", silent ? "开启声音" : "静音");
+    volumeBtn.setAttribute("aria-pressed", String(!silent));
+    volumeBtn.title = silent ? "开启声音" : "静音";
+    volumeSlider.value = String(video.volume);
   };
 
   const setMuted = (muted) => {
     video.muted = muted;
-    muteLabel.textContent = muted ? "静音" : "有声";
-    toggleMuteBtn.querySelector(".icon").textContent = muted ? "🔇" : "🔊";
-    volumeBtn.textContent = muted || video.volume === 0 ? "🔇" : "🔈";
+    syncAudioState();
+  };
+
+  const updateLiveState = (state, label) => {
+    liveBadge.dataset.state = state;
+    liveState.textContent = label;
+    streamSub.textContent = label;
+  };
+
+  const updateStreamer = (data) => {
+    const name = String(data.uname || "").trim() || "直播间";
+    document.title = name;
+    streamerName.textContent = name;
+    streamerInitial.textContent = Array.from(name)[0];
+    streamerRoom.textContent = `房间 ${data.roomid || data.uid || uid}`;
+    if (data.avatar) {
+      streamerAvatar.src = data.avatar;
+      streamerAvatar.hidden = false;
+      streamerInitial.hidden = true;
+    } else {
+      streamerAvatar.removeAttribute("src");
+      streamerAvatar.hidden = true;
+      streamerInitial.hidden = false;
+    }
   };
 
   const clearReconnectTimer = () => {
@@ -107,22 +140,21 @@
     }
   };
 
-  const clearHlsRestartTimer = () => {
-    if (hlsRestartTimer) {
-      clearTimeout(hlsRestartTimer);
-      hlsRestartTimer = null;
+  const clearStreamRetryTimer = () => {
+    if (streamRetryTimer !== null) {
+      clearInterval(streamRetryTimer);
+      streamRetryTimer = null;
     }
   };
 
-  const handleStreamEnded = () => {
-    if (streamEnded) {
-      return;
+  const startStreamRetry = () => {
+    if (streamRetryTimer === null && !isPageClosing) {
+      streamRetryTimer = setInterval(refreshStream, STREAM_RETRY_MS);
     }
-    streamEnded = true;
+  };
 
-    // 阻止 HLS 重连定时器再次拉流
-    clearHlsRestartTimer();
-
+  const stopStream = () => {
+    streamGeneration += 1;
     if (hls) {
       hls.destroy();
       hls = null;
@@ -143,10 +175,19 @@
     } catch (err) {
       // ignore pause failure
     }
+  };
 
+  const handleStreamEnded = (title = "直播已结束") => {
+    if (isPageClosing) return;
+    if (!streamEnded) {
+      streamEnded = true;
+      stopStream();
+    }
     hideTapPlay();
-    hideSoundHint();
-    showStatus("直播已结束", "主播已关播");
+    updateLiveState("ended", "等待开播");
+    if (!wsClient) commentSub.textContent = "等待开播";
+    showStatus(title, "每 10 秒自动重试，开播后自动恢复");
+    startStreamRetry();
   };
 
   const closeWs = ({ preventReconnect = false } = {}) => {
@@ -212,36 +253,27 @@
   };
 
   const tryAutoplay = async () => {
+    if (streamEnded || isPageClosing) return;
+    const generation = streamGeneration;
     if (!audioUnlocked) {
-      video.muted = true;
+      setMuted(true);
     }
 
     try {
       await video.play();
-      hideStatus();
+      if (generation !== streamGeneration || streamEnded || isPageClosing) return;
       hideTapPlay();
-      setMuted(video.muted || video.volume === 0);
+      syncAudioState();
     } catch (err) {
+      if (generation !== streamGeneration || streamEnded || isPageClosing) return;
       showStatus("需要手动播放", "点击屏幕或按 P 开启声音");
       showTapPlay();
     }
 
-    if (!audioUnlocked) {
-      showSoundHint();
-    }
   };
 
   const attachStream = (url) => {
     streamEnded = false;
-    clearHlsRestartTimer();
-    if (hls) {
-      hls.destroy();
-      hls = null;
-    }
-    if (flvPlayer) {
-      flvPlayer.destroy();
-      flvPlayer = null;
-    }
 
     const streamType = getStreamType(url);
 
@@ -272,13 +304,14 @@
         flvPlayer.attachMediaElement(video);
         flvPlayer.load();
         flvPlayer.on(flvLib.Events.ERROR, (errType, errDetail, data) => {
+          if (streamEnded || isPageClosing) return;
           console.error("FLV 播放错误", errType, errDetail, data);
           const info = (data && (data.info || data.msg)) || "";
           // codec id 12 = HEVC，codec id 13 = AV1
           if (/Unsupported codec/i.test(info) || /codec/i.test(String(errDetail || ""))) {
             showStatus("编码不支持", "浏览器不支持该视频编码（可能是 H.265/HEVC），请使用 Edge/Safari 或安装 HEVC 扩展");
           } else {
-            showStatus("播放失败", "FLV 流解析失败");
+            handleStreamEnded("直播连接中断");
           }
         });
         flvPlayer.on(flvLib.Events.MEDIA_ATTACHING, () => {
@@ -330,7 +363,6 @@
             }
           };
           checkEnded();
-          video.addEventListener("ended", handleStreamEnded, { once: true });
         }
       });
       hls.on(Hls.Events.ERROR, (event, data) => {
@@ -350,8 +382,7 @@
         }
 
         if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
-          showStatus("直播加载中断", "正在重连直播流...");
-          hls.startLoad(-1);
+          handleStreamEnded("直播连接中断");
           return;
         }
 
@@ -364,75 +395,68 @@
           return;
         }
 
-        showStatus("播放连接中断", "正在重新连接直播流...");
-        hlsRestartTimer = setTimeout(() => {
-          attachStream(url);
-        }, 800);
+        handleStreamEnded("直播连接中断");
       });
     } else {
       showStatus("无法播放", "当前浏览器不支持该流格式");
       return;
     }
+  };
 
-    video.addEventListener(
-      "canplay",
-      () => {
-        tryAutoplay();
-      },
-      { once: true }
-    );
-
-    video.addEventListener(
-      "loadedmetadata",
-      () => {
-        tryAutoplay();
-      },
-      { once: true }
-    );
+  const clearDanmaku = () => {
+    danmakuLayer.innerHTML = "";
+    danmakuLanes.length = 0;
   };
 
   const addDanmaku = (item) => {
-    if (!danmakuEnabled) {
+    if (!danmakuEnabled || danmakuLayer.children.length >= 60) {
       return;
     }
+
+    const layer = danmakuLayer.getBoundingClientRect();
+    const laneCount = Math.floor(layer.height / DANMAKU_LANE_HEIGHT);
+    if (layer.width <= 0 || laneCount === 0) return;
+
+    let lane = 0;
+    for (; lane < laneCount; lane += 1) {
+      const tail = danmakuLanes[lane];
+      if (!tail || tail.parentNode !== danmakuLayer ||
+          tail.getBoundingClientRect().right + DANMAKU_GAP <= layer.right) break;
+    }
+    // 拥挤时略过画面弹幕；右侧评论仍完整显示。
+    if (lane === laneCount) return;
 
     const node = document.createElement("div");
     node.className = "danmaku-item";
     node.innerHTML = item.text || "";
     node.style.visibility = "hidden";
-
-    const layerHeight = danmakuLayer.clientHeight || 1;
-    const laneCount = Math.max(6, Math.floor(layerHeight / 40));
-    const lane = Math.floor(Math.random() * laneCount);
-    node.style.top = `${12 + lane * 32}px`;
-
-    const duration = 7.2 + Math.random() * 3.6;
-    node.style.animationDuration = `${duration}s`;
-
+    node.style.animationName = "none";
+    node.style.top = `${4 + lane * DANMAKU_LANE_HEIGHT}px`;
     danmakuLayer.appendChild(node);
 
-    const layerWidth = danmakuLayer.clientWidth || 1;
-    const nodeWidth = node.getBoundingClientRect().width || 1;
-    const travel = layerWidth + nodeWidth;
+    const nodeWidth = Math.ceil(node.getBoundingClientRect().width);
+    const travel = layer.width + nodeWidth;
+    // 所有轨道保持相同像素速度，长弹幕不会追上前一条。
+    node.style.width = `${nodeWidth}px`;
     node.style.setProperty("--danmaku-distance", `${travel}px`);
+    node.style.animationDuration = `${travel / DANMAKU_SPEED}s`;
+    node.style.animationName = "danmaku-move";
     node.style.visibility = "visible";
-
+    danmakuLanes[lane] = node;
     node.addEventListener("animationend", () => node.remove());
-
-    const maxItems = 60;
-    while (danmakuLayer.children.length > maxItems) {
-      danmakuLayer.removeChild(danmakuLayer.firstChild);
-    }
   };
+
+  const danmakuResizeObserver = new ResizeObserver(clearDanmaku);
+  danmakuResizeObserver.observe(danmakuLayer);
 
   const syncDanmakuState = () => {
     danmakuLayer.classList.toggle("is-hidden", !danmakuEnabled);
     danmakuToggleBtn.classList.toggle("is-on", danmakuEnabled);
-    danmakuToggleBtn.textContent = danmakuEnabled ? "弹幕开" : "弹幕关";
+    danmakuLabel.textContent = danmakuEnabled ? "弹幕开" : "弹幕关";
     danmakuToggleBtn.setAttribute("aria-pressed", danmakuEnabled ? "true" : "false");
 
     if (!danmakuEnabled) {
-      danmakuLayer.innerHTML = "";
+      clearDanmaku();
     }
   };
 
@@ -454,6 +478,7 @@
     node.appendChild(text);
 
     commentList.appendChild(node);
+    commentEmpty.hidden = true;
 
     const maxItems = 200;
     while (commentList.children.length > maxItems) {
@@ -532,34 +557,39 @@
 
   const syncFullscreenState = () => {
     const isFs = !!document.fullscreenElement;
-    fullscreenLabel.textContent = isFs ? "退出" : "全屏";
+    fullscreenLabel.textContent = isFs ? "退出全屏" : "全屏";
+    fullscreenBtn.querySelector("use").setAttribute("href", isFs ? "#icon-exit-fullscreen" : "#icon-fullscreen");
+    fullscreenBtn.setAttribute("aria-label", isFs ? "退出全屏" : "全屏");
     playerLayout.classList.toggle("fullscreen", isFs);
   };
 
   const init = async () => {
-    showStatus("正在获取直播信息", "请稍候");
+    updateLiveState("loading", "连接中");
+    showStatus("正在连接直播", "正在获取最新直播信息");
+    let requestTimeout = null;
 
     try {
       if (directStreamUrl) {
         originUrl = directStreamUrl;
-        if (streamSub) streamSub.textContent = directStreamUrl;
-        hideStatus();
-        video.muted = true;
-        video.autoplay = true;
-        video.playsInline = true;
+        updateStreamer({ uname: params.get("name"), uid });
         attachStream(directStreamUrl);
-        setTimeout(() => {
-          tryAutoplay();
-        }, 0);
+        tryAutoplay();
         connectWs();
         return;
       }
 
-      const res = await fetch(`${infoBase}${encodeURIComponent(uid)}`);
+      infoRequest = new AbortController();
+      requestTimeout = setTimeout(() => infoRequest?.abort(), 8000);
+      const res = await fetch(`${infoBase}${encodeURIComponent(uid)}`, {
+        cache: "no-store",
+        signal: infoRequest.signal,
+      });
       if (!res.ok) {
         throw new Error("接口请求失败");
       }
       const data = await res.json();
+      if (isPageClosing) return;
+      updateStreamer(data);
       originUrl = data.orig || "";
 
       if (isMobile()) {
@@ -571,28 +601,48 @@
         return;
       }
 
-      if (data.status !== "1" || !data.m3u8) {
-        showStatus("当前未开播", "请稍后再来");
+      if (String(data.status) !== "1" || !data.m3u8) {
+        handleStreamEnded("主播暂未开播");
         return;
       }
 
-      streamSub && (streamSub.textContent = "直播已连接");
-      hideStatus();
-      video.muted = true;
-      video.autoplay = true;
-      video.playsInline = true;
       attachStream(data.m3u8);
-      setTimeout(() => {
-        tryAutoplay();
-      }, 0);
-      setTimeout(() => {
-        if (video.paused) {
-          showTapPlay();
-        }
-      }, 1200);
+      tryAutoplay();
       connectWs();
     } catch (err) {
-      showStatus("加载失败", "请检查接口服务");
+      if (isPageClosing) return;
+      updateLiveState("error", "连接中断");
+      commentSub.textContent = "等待重连";
+      showStatus("暂时无法连接直播", "每 10 秒自动重试，也可点击下方刷新");
+      startStreamRetry();
+    } finally {
+      clearTimeout(requestTimeout);
+      infoRequest = null;
+    }
+  };
+
+  // 手动刷新与关播重试共用入口；保留当前静音、音量和用户声音授权。
+  const refreshStream = async () => {
+    if (refreshInProgress || isPageClosing) return;
+    refreshInProgress = true;
+    refreshBtn.disabled = true;
+    refreshBtn.classList.add("is-refreshing");
+    streamEnded = true;
+    stopStream();
+    clearReconnectTimer();
+    closeWs({ preventReconnect: true });
+    commentSub.textContent = "连接中…";
+    pendingComments.length = 0;
+    clearDanmaku();
+    hideTapPlay();
+    video.removeAttribute("src");
+    video.load();
+    try {
+      await init();
+    } finally {
+      refreshInProgress = false;
+      refreshBtn.disabled = false;
+      refreshBtn.classList.remove("is-refreshing");
     }
   };
 
@@ -608,29 +658,28 @@
       }
       appendComment(next.item);
       addDanmaku(next.item);
-      totalComments += 1;
-      if (commentCount) commentCount.textContent = String(totalComments);
-      if (streamSub) streamSub.textContent = `${next.item.platform || ""} · ${next.item.user || ""}`.trim();
     }
   };
 
-  toggleMuteBtn.addEventListener("click", () => {
-    const next = !video.muted;
+  const toggleSound = () => {
+    audioUnlocked = true;
+    const next = !(video.muted || video.volume === 0);
+    if (!next && video.volume === 0) video.volume = 0.6;
     setMuted(next);
     if (!next) {
-      audioUnlocked = true;
-      hideSoundHint();
-      video.play().catch(() => {
-        showSoundHint();
-      });
+      if (!streamEnded) tryAutoplay();
     }
-  });
+  };
 
   fullscreenBtn.addEventListener("click", async () => {
-    if (!document.fullscreenElement) {
-      await playerLayout.requestFullscreen();
-    } else {
-      await document.exitFullscreen();
+    try {
+      if (!document.fullscreenElement) {
+        await playerLayout.requestFullscreen();
+      } else {
+        await document.exitFullscreen();
+      }
+    } catch (err) {
+      fullscreenBtn.title = "当前浏览器暂不支持全屏";
     }
   });
 
@@ -642,27 +691,7 @@
     }
   });
 
-  refreshBtn.addEventListener("click", () => {
-    streamEnded = false;
-    if (hls) {
-      hls.destroy();
-      hls = null;
-    }
-    clearHlsRestartTimer();
-    if (flvPlayer) {
-      flvPlayer.destroy();
-      flvPlayer = null;
-    }
-    clearReconnectTimer();
-    closeWs({ preventReconnect: true });
-    pendingComments.length = 0;
-    danmakuLayer.innerHTML = "";
-    video.pause();
-    video.removeAttribute("src");
-    video.load();
-    init();
-    setMuted(true);
-  });
+  refreshBtn.addEventListener("click", refreshStream);
 
   danmakuToggleBtn.addEventListener("click", () => {
     danmakuEnabled = !danmakuEnabled;
@@ -681,25 +710,14 @@
 
   volumeSlider.addEventListener("input", (event) => {
     const value = Number(event.target.value);
+    audioUnlocked = true;
     video.volume = value;
-    if (value === 0) {
-      setMuted(true);
-    } else if (video.muted) {
-      setMuted(false);
-    }
+    setMuted(value === 0);
   });
 
   volumeBtn.addEventListener("click", (event) => {
     event.stopPropagation();
-    if (video.muted || video.volume === 0) {
-      if (video.volume === 0) {
-        video.volume = 0.6;
-        volumeSlider.value = String(video.volume);
-      }
-      setMuted(false);
-    } else {
-      setMuted(true);
-    }
+    toggleSound();
   });
 
   const volumePop = document.querySelector(".volume-pop");
@@ -727,62 +745,64 @@
   volumePop.addEventListener("mouseleave", scheduleHideVolumePopover);
   volumePopover.addEventListener("mouseenter", showVolumePopover);
   volumePopover.addEventListener("mouseleave", scheduleHideVolumePopover);
+  volumePop.addEventListener("focusin", showVolumePopover);
+  volumePop.addEventListener("focusout", scheduleHideVolumePopover);
 
   tapPlayBtn.addEventListener("click", (event) => {
     event.stopPropagation();
-    video.muted = true;
-    video
-      .play()
-      .then(() => {
-        hideTapPlay();
-        hideStatus();
-      })
-      .catch(() => {
-        showStatus("正在连接直播...", "请稍候或刷新重试");
-        showTapPlay();
-      });
+    audioUnlocked = true;
+    tryAutoplay();
   });
 
   document.addEventListener("fullscreenchange", syncFullscreenState);
 
   document.addEventListener("keydown", (event) => {
-    if (event.key.toLowerCase() === "p") {
-      const next = !video.muted;
-      setMuted(next);
-      if (!next) {
-        audioUnlocked = true;
-        hideSoundHint();
-        video.play().catch(() => {
-          showSoundHint();
-        });
-      }
+    if (event.target.closest("input, textarea, [contenteditable='true']")) return;
+    if (!event.repeat && event.key.toLowerCase() === "p") {
+      toggleSound();
     }
   });
 
   document.addEventListener("click", (event) => {
-    if (event.target.closest("button, input")) {
+    if (event.target.closest("button, input, a") || streamEnded) {
       return;
     }
 
     if (!audioUnlocked && video.muted && !video.paused) {
       setMuted(false);
       audioUnlocked = true;
-      hideSoundHint();
-      video.play().catch(() => {
-        showSoundHint();
-      });
+      tryAutoplay();
     }
   });
 
   syncCommentListState();
   syncDanmakuState();
+  syncAudioState();
+
+  streamerAvatar.addEventListener("error", () => {
+    streamerAvatar.hidden = true;
+    streamerInitial.hidden = false;
+  });
+
+  video.addEventListener("volumechange", syncAudioState);
+  video.addEventListener("canplay", tryAutoplay);
+  video.addEventListener("loadedmetadata", tryAutoplay);
+
+  // 只有实际恢复播放才停止关播轮询，拿到地址不代表直播已恢复。
+  video.addEventListener("playing", () => {
+    if (streamEnded || isPageClosing) return;
+    clearStreamRetryTimer();
+    hideStatus();
+    hideTapPlay();
+    updateLiveState("live", "直播中");
+  });
 
   video.addEventListener("play", () => {
     hideTapPlay();
   });
 
   video.addEventListener("pause", () => {
-    if (!video.ended && !streamEnded) {
+    if (!video.ended && !streamEnded && !isPageClosing) {
       showTapPlay();
     }
   });
@@ -790,6 +810,13 @@
   // 媒体真正播放结束（关播兜底信号）
   video.addEventListener("ended", () => {
     handleStreamEnded();
+  });
+
+  // 原生 HLS 在源站关播返回 404 时可能只触发 error，不触发 ended。
+  video.addEventListener("error", () => {
+    if (!hls && !flvPlayer && !streamEnded) {
+      handleStreamEnded("直播连接中断");
+    }
   });
 
   video.addEventListener("stalled", () => {
@@ -818,6 +845,8 @@
     }
 
     isPageClosing = true;
+    clearStreamRetryTimer();
+    infoRequest?.abort();
     clearReconnectTimer();
     closeWs({ preventReconnect: true });
     pendingComments.length = 0;
@@ -828,19 +857,11 @@
     }
 
     clearInterval(flushIntervalId);
+    danmakuResizeObserver.disconnect();
+    clearDanmaku();
 
-    if (hls) {
-      hls.destroy();
-      hls = null;
-    }
-    clearHlsRestartTimer();
-    if (flvPlayer) {
-      flvPlayer.destroy();
-      flvPlayer = null;
-    }
-
-    video.pause();
+    stopStream();
   });
 
-  init();
+  refreshStream();
 })();

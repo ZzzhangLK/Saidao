@@ -576,7 +576,7 @@
                     scheduleChatScrollToBottom();
                     hideNewMessageAlert();
                 });
-                root.appendChild(newMessageAlert);
+                (root.querySelector('.chat-footer') || root).appendChild(newMessageAlert);
             } else {
                 newMessageAlert.querySelector('.new-message-btn').textContent = `有新消息 (${newMessageCount})`;
             }

@@ -104,9 +104,9 @@
             justify-content: space-between;
             align-items: center;
             gap: 12px;
-            margin-bottom: 24px;
-            padding: 12px 0;
-            border-bottom: 1px solid var(--border-color);
+            margin-bottom: 15px;
+            padding: 12px 0 2px;
+            border-bottom: 1px solid var(--primary-color);
         }
 
         .logo {
@@ -1981,6 +1981,7 @@
         }
 
         .chat-footer {
+            position: relative;
             padding: 5px;
             border-top: 1px solid var(--chat-border);
             display: flex;
@@ -3471,13 +3472,19 @@
             position: absolute;
             bottom: 20px;
             left: 50%;
-            top: 85%;
+            pointer-events: none;
             transform: translateX(-50%);
             z-index: 100;
             animation: fadeIn 0.3s ease;
         }
 
+        .chat-footer > .new-message-alert {
+            bottom: calc(100% + 12px);
+        }
+
         .new-message-btn {
+            pointer-events: auto;
+            white-space: nowrap;
             padding: 8px 16px;
             background: linear-gradient(135deg, var(--primary-color) 0%, var(--text-primary) 100%);
             color: white;
