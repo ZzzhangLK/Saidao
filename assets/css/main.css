@@ -103,6 +103,7 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
+            gap: 12px;
             margin-bottom: 24px;
             padding: 12px 0;
             border-bottom: 1px solid var(--border-color);
@@ -112,12 +113,21 @@
             display: flex;
             align-items: center;
             gap: 0;
-            font-size: 22px;
-            font-weight: 700;
-            color: var(--primary-dark);
+            min-width: 0;
         }
 
-        .brand-stack { min-width: 0; }
+        .logo-image {
+            display: block;
+            width: auto;
+            max-width: 100%;
+            /* 在原展示高度（宽度 / 1.9）基础上缩小 20%。 */
+            height: calc(200px / 1.9 * 0.8);
+            object-fit: contain;
+        }
+
+        .brand-stack {
+            min-width: 0;
+        }
 
         .notice-bar {
             display: flex;
@@ -166,43 +176,11 @@
             .notice-scroll-track.is-scrolling { animation: none; }
         }
 
-        .logo-text {
-            position: relative;
-            font-size: 23px;
-            font-weight: bold;
-            color: var(--primary-color);
-            background: linear-gradient(45deg,
-            var(--primary-color) 0%,
-            #ffeabd 60%,
-            #ff523b 100%);
-            background-size: 300% 300%;
-            -webkit-background-clip: text;
-            background-clip: text;
-            -webkit-text-fill-color: transparent;
-            animation: gradientFlow 6s ease infinite;
-            padding-bottom: 4px;
-        }
-
-        .logo-text::after {
-            content: '';
-            position: absolute;
-            bottom: -2px;
-            left: 21px;
-            width: 60%;
-            height: 2px;
-            background: linear-gradient(45deg,
-            var(--primary-color) 0%,
-            #ffeabd 60%,
-            #ff523b 100%);
-            background-size: 200% 100%;
-            animation: gradientFlow 4s ease infinite;
-            opacity: 0.7;
-        }
-
         .header-controls {
             display: flex;
             align-items: center;
             gap: 7px;
+            flex-shrink: 0;
         }
 
         .btn {
@@ -1436,8 +1414,28 @@
 
         .avatar-container {
             position: relative;
-            display: inline-block;
+            display: block;
+            flex: 0 0 45px;
+            width: 45px;
+            height: 45px;
             margin-right: 10px;
+        }
+
+        .avatar-container.avatar-failed {
+            border-radius: 50%;
+            background: var(--primary-light);
+            color: #fff;
+            font-size: 18px;
+            line-height: 1;
+        }
+
+        .avatar-container.avatar-failed::before {
+            content: '•';
+            position: absolute;
+            inset: 0;
+            display: grid;
+            place-items: center;
+            pointer-events: none;
         }
 
         .chat-message {
@@ -1447,6 +1445,7 @@
         }
 
         .message-avatar {
+            display: block;
             width: 45px;
             height: 45px;
             border-radius: 50%;
@@ -1454,6 +1453,10 @@
             flex-shrink: 0;
             cursor: pointer; /* 添加光标提示，表明头像可点击 */
             border: 2px solid var(--primary-color);
+        }
+
+        .message-avatar.avatar-load-failed {
+            opacity: 0;
         }
 
         .faction-tag {
@@ -2927,6 +2930,10 @@
 
         @media (max-width: 768px) {
 
+            .logo-image {
+                height: calc(clamp(120px, 34vw, 160px) / 1.9 * 0.8);
+            }
+
             .avatar-section {
                 --avatar-size: 85px;
                 aspect-ratio: 16/9;
@@ -3051,10 +3058,6 @@
             header {
                 margin-bottom: 16px;
                 padding: 8px 0;
-            }
-
-            .logo {
-                font-size: 18px;
             }
 
             .filter-tabs {
