@@ -10,6 +10,16 @@
   const streamSub = document.getElementById("streamSub");
   const fullscreenBtn = document.getElementById("fullscreenBtn");
   const fullscreenLabel = document.getElementById("fullscreenLabel");
+  const pipBtn = document.getElementById("pipBtn");
+  const pipLabel = document.getElementById("pipLabel");
+  const pipPlaceholder = document.getElementById("pipPlaceholder");
+  const pipReturnBtn = document.getElementById("pipReturnBtn");
+  const pipMessage = document.getElementById("pipMessage");
+  const pipCommentsBtn = document.getElementById("pipCommentsBtn");
+  const pipCommentsCloseBtn = document.getElementById("pipCommentsCloseBtn");
+  const commentPanel = document.getElementById("commentPanel");
+  const playerShell = document.getElementById("playerShell");
+  const playerArea = document.getElementById("playerArea");
   const originBtn = document.getElementById("originBtn");
   const tapPlayBtn = document.getElementById("tapPlayBtn");
   const refreshBtn = document.getElementById("refreshBtn");
@@ -34,9 +44,15 @@
   let hls = null;
   let flvPlayer = null;
   let streamRetryTimer = null;
+  let playbackTimerWindow = window;
+  let flushIntervalId = null;
   let refreshInProgress = false;
   let infoRequest = null;
   let streamGeneration = 0;
+  let pipWindow = null;
+  let pipOpening = false;
+  const PIP_COMMENT_WIDTH = 200;
+  let savedCommentScrollTop = 0;
   let audioUnlocked = false;
   let originUrl = "";
   const COMMENT_DELAY_MS = 5000;
@@ -119,6 +135,7 @@
   const updateStreamer = (data) => {
     const name = String(data.uname || "").trim() || "直播间";
     document.title = name;
+    if (pipWindow) pipWindow.document.title = name;
     streamerName.textContent = name;
     streamerInitial.textContent = Array.from(name)[0];
     streamerRoom.textContent = `房间 ${data.roomid || data.uid || uid}`;
@@ -142,15 +159,24 @@
 
   const clearStreamRetryTimer = () => {
     if (streamRetryTimer !== null) {
-      clearInterval(streamRetryTimer);
+      playbackTimerWindow.clearInterval(streamRetryTimer);
       streamRetryTimer = null;
     }
   };
 
   const startStreamRetry = () => {
     if (streamRetryTimer === null && !isPageClosing) {
-      streamRetryTimer = setInterval(refreshStream, STREAM_RETRY_MS);
+      streamRetryTimer = playbackTimerWindow.setInterval(refreshStream, STREAM_RETRY_MS);
     }
+  };
+
+  const movePlaybackTimers = (targetWindow) => {
+    const retrying = streamRetryTimer !== null;
+    clearStreamRetryTimer();
+    playbackTimerWindow.clearInterval(flushIntervalId);
+    playbackTimerWindow = targetWindow;
+    flushIntervalId = isPageClosing ? null : targetWindow.setInterval(flushPendingComments, 200);
+    if (retrying) startStreamRetry();
   };
 
   const stopStream = () => {
@@ -217,6 +243,7 @@
   };
 
   const syncCommentListState = () => {
+    if (commentPanel.hidden || commentList.clientHeight === 0) return;
     isCommentListAtBottom = isCommentListScrolledToBottom();
     if (scrollBottomBtn) {
       scrollBottomBtn.classList.toggle("is-visible", !isCommentListAtBottom);
@@ -426,7 +453,7 @@
     // 拥挤时略过画面弹幕；右侧评论仍完整显示。
     if (lane === laneCount) return;
 
-    const node = document.createElement("div");
+    const node = danmakuLayer.ownerDocument.createElement("div");
     node.className = "danmaku-item";
     node.innerHTML = item.text || "";
     node.style.visibility = "hidden";
@@ -454,6 +481,7 @@
     danmakuToggleBtn.classList.toggle("is-on", danmakuEnabled);
     danmakuLabel.textContent = danmakuEnabled ? "弹幕开" : "弹幕关";
     danmakuToggleBtn.setAttribute("aria-pressed", danmakuEnabled ? "true" : "false");
+    danmakuToggleBtn.setAttribute("aria-label", danmakuEnabled ? "关闭弹幕" : "开启弹幕");
 
     if (!danmakuEnabled) {
       clearDanmaku();
@@ -462,19 +490,20 @@
 
   const appendComment = (item) => {
     const shouldStickToBottom = isCommentListAtBottom;
-    const node = document.createElement("div");
+    const commentDocument = commentList.ownerDocument;
+    const node = commentDocument.createElement("div");
     node.className = "comment-item";
 
-    const user = document.createElement("span");
+    const user = commentDocument.createElement("span");
     user.className = "comment-user";
     user.innerHTML = `${item.user || "匿名"}`.trim();
 
-    const text = document.createElement("span");
+    const text = commentDocument.createElement("span");
     text.className = "comment-text";
     text.innerHTML = item.text || "";
 
     node.appendChild(user);
-    node.appendChild(document.createTextNode(" "));
+    node.appendChild(commentDocument.createTextNode(" "));
     node.appendChild(text);
 
     commentList.appendChild(node);
@@ -485,6 +514,7 @@
       commentList.removeChild(commentList.firstChild);
     }
 
+    if (commentPanel.hidden) return;
     if (shouldStickToBottom) {
       scrollCommentListToBottom("auto");
     } else {
@@ -561,6 +591,139 @@
     fullscreenBtn.querySelector("use").setAttribute("href", isFs ? "#icon-exit-fullscreen" : "#icon-fullscreen");
     fullscreenBtn.setAttribute("aria-label", isFs ? "退出全屏" : "全屏");
     playerLayout.classList.toggle("fullscreen", isFs);
+  };
+
+  const showPipMessage = (message) => {
+    pipMessage.textContent = message;
+    pipMessage.hidden = false;
+  };
+
+  const getPipSize = () => {
+    const ratio = video.videoWidth / video.videoHeight;
+    const maxWidth = Math.floor(window.screen.availWidth * 0.8);
+    const maxHeight = Math.floor(window.screen.availHeight * 0.8);
+    const videoWidth = Math.min(ratio < 1 ? 360 : 640, maxWidth - PIP_COMMENT_WIDTH, maxHeight * ratio);
+    const height = Math.round(videoWidth / ratio);
+    // 竖屏直播加上评论栏后仍优先保持竖向窗口，视频通过 contain 完整显示。
+    const width = Math.min(videoWidth + PIP_COMMENT_WIDTH, ratio < 1 ? height * 0.95 : maxWidth);
+    return { width: Math.round(width), height };
+  };
+
+  const restoreCommentScroll = () => {
+    if (isCommentListAtBottom) {
+      scrollCommentListToBottom();
+    } else {
+      commentList.scrollTop = savedCommentScrollTop;
+    }
+  };
+
+  const setPipCommentsVisible = (visible) => {
+    if (!pipWindow) return;
+    if (!visible && !commentPanel.hidden) savedCommentScrollTop = commentList.scrollTop;
+    commentPanel.hidden = !visible;
+    pipWindow.document.body.classList.toggle("pip-comments-hidden", !visible);
+    pipCommentsBtn.setAttribute("aria-pressed", String(visible));
+    pipCommentsBtn.title = visible ? "关闭评论栏" : "显示评论栏";
+    pipCommentsBtn.setAttribute("aria-label", pipCommentsBtn.title);
+    if (visible) restoreCommentScroll();
+    clearDanmaku();
+  };
+
+  const syncPipButton = () => {
+    pipLabel.textContent = pipWindow ? "返回" : "小屏";
+    pipBtn.title = pipWindow ? "返回页面播放" : "小屏播放";
+    pipBtn.setAttribute("aria-label", pipBtn.title);
+    pipBtn.setAttribute("aria-pressed", String(!!pipWindow));
+    pipPlaceholder.hidden = !pipWindow;
+  };
+
+  const openPip = async () => {
+    if (pipOpening || isPageClosing) return;
+    if (pipWindow) {
+      pipWindow.close();
+      return;
+    }
+    pipMessage.hidden = true;
+    if (!window.documentPictureInPicture?.requestWindow) {
+      showPipMessage("当前浏览器不支持带弹幕的小窗，请使用最新版 Chrome 或 Edge");
+      return;
+    }
+    if (!video.videoWidth || !video.videoHeight) {
+      showPipMessage("直播画面就绪后即可开启小屏播放");
+      return;
+    }
+
+    pipOpening = true;
+    pipBtn.disabled = true;
+    let openedWindow = null;
+    try {
+      // 必须直接在点击事件内申请窗口，不能先 await 退出全屏而丢失用户手势。
+      openedWindow = await window.documentPictureInPicture.requestWindow({
+        ...getPipSize(),
+        preferInitialWindowPlacement: true,
+      });
+      if (isPageClosing || openedWindow.closed) {
+        openedWindow.close();
+        return;
+      }
+      const pipDocument = openedWindow.document;
+      pipDocument.title = document.title;
+      pipDocument.documentElement.lang = "zh-CN";
+      const stylesheet = document.getElementById("playerStyles").cloneNode(true);
+      stylesheet.href = document.getElementById("playerStyles").href;
+      stylesheet.addEventListener("load", () => {
+        if (pipWindow === openedWindow) restoreCommentScroll();
+      }, { once: true });
+      pipDocument.head.appendChild(stylesheet);
+      pipDocument.body.classList.add("pip-window");
+      pipDocument.body.appendChild(document.querySelector(".icon-definitions").cloneNode(true));
+      // 使用小窗自己的观察器，母页在后台时缩放也能及时重排弹幕。
+      const pipResizeObserver = new openedWindow.ResizeObserver(clearDanmaku);
+      pipWindow = openedWindow;
+      savedCommentScrollTop = commentList.scrollTop;
+      danmakuResizeObserver.disconnect();
+      const restorePlayer = () => {
+        if (pipWindow !== openedWindow) return;
+        const wasPlaying = !video.paused;
+        pipResizeObserver.disconnect();
+        pipDocument.removeEventListener("keydown", handlePlayerKeydown);
+        pipDocument.removeEventListener("click", handlePlayerClick);
+        if (!commentPanel.hidden) savedCommentScrollTop = commentList.scrollTop;
+        playerArea.appendChild(playerShell);
+        playerLayout.appendChild(commentPanel);
+        commentPanel.hidden = false;
+        pipWindow = null;
+        if (!isPageClosing) danmakuResizeObserver.observe(danmakuLayer);
+        movePlaybackTimers(window);
+        clearDanmaku();
+        syncPipButton();
+        restoreCommentScroll();
+        if (wasPlaying && !isPageClosing) tryAutoplay();
+      };
+      openedWindow.addEventListener("pagehide", restorePlayer, { once: true });
+      pipDocument.addEventListener("keydown", handlePlayerKeydown);
+      pipDocument.addEventListener("click", handlePlayerClick);
+      const wasPlaying = !video.paused;
+      clearDanmaku();
+      pipDocument.body.appendChild(playerShell);
+      pipDocument.body.appendChild(commentPanel);
+      setPipCommentsVisible(true);
+      pipResizeObserver.observe(danmakuLayer);
+      // 让可见小窗驱动弹幕与关播重试，避免母页切入后台后的定时器限频。
+      movePlaybackTimers(openedWindow);
+      syncPipButton();
+      if (wasPlaying) tryAutoplay();
+      if (document.fullscreenElement) {
+        document.exitFullscreen().catch(() => {});
+      }
+    } catch (err) {
+      openedWindow?.close();
+      console.warn("小窗打开失败", err?.name || "", err?.message || "浏览器未提供错误信息");
+      showPipMessage("小窗未能打开，请点击小屏按钮重试");
+    } finally {
+      pipOpening = false;
+      pipBtn.disabled = false;
+    }
   };
 
   const init = async () => {
@@ -715,6 +878,11 @@
     setMuted(value === 0);
   });
 
+  pipBtn.addEventListener("click", openPip);
+  pipReturnBtn.addEventListener("click", () => pipWindow?.close());
+  pipCommentsBtn.addEventListener("click", () => setPipCommentsVisible(commentPanel.hidden));
+  pipCommentsCloseBtn.addEventListener("click", () => setPipCommentsVisible(false));
+
   volumeBtn.addEventListener("click", (event) => {
     event.stopPropagation();
     toggleSound();
@@ -756,14 +924,14 @@
 
   document.addEventListener("fullscreenchange", syncFullscreenState);
 
-  document.addEventListener("keydown", (event) => {
+  const handlePlayerKeydown = (event) => {
     if (event.target.closest("input, textarea, [contenteditable='true']")) return;
     if (!event.repeat && event.key.toLowerCase() === "p") {
       toggleSound();
     }
-  });
+  };
 
-  document.addEventListener("click", (event) => {
+  const handlePlayerClick = (event) => {
     if (event.target.closest("button, input, a") || streamEnded) {
       return;
     }
@@ -773,7 +941,7 @@
       audioUnlocked = true;
       tryAutoplay();
     }
-  });
+  };
 
   syncCommentListState();
   syncDanmakuState();
@@ -783,6 +951,9 @@
     streamerAvatar.hidden = true;
     streamerInitial.hidden = false;
   });
+
+  document.addEventListener("keydown", handlePlayerKeydown);
+  document.addEventListener("click", handlePlayerClick);
 
   video.addEventListener("volumechange", syncAudioState);
   video.addEventListener("canplay", tryAutoplay);
@@ -837,7 +1008,7 @@
     }
   });
 
-  const flushIntervalId = setInterval(flushPendingComments, 200);
+  movePlaybackTimers(window);
 
   window.addEventListener("pagehide", (event) => {
     if (event.persisted) {
@@ -845,6 +1016,7 @@
     }
 
     isPageClosing = true;
+    pipWindow?.close();
     clearStreamRetryTimer();
     infoRequest?.abort();
     clearReconnectTimer();
@@ -856,7 +1028,7 @@
       volumeHideTimer = null;
     }
 
-    clearInterval(flushIntervalId);
+    playbackTimerWindow.clearInterval(flushIntervalId);
     danmakuResizeObserver.disconnect();
     clearDanmaku();
 

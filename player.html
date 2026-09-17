@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#202027" />
   <title>Saidao 直播</title>
-  <link rel="stylesheet" href="assets/css/player.css" />
+  <link id="playerStyles" rel="stylesheet" href="assets/css/player.css" />
   <script defer src="https://cdn.jsdelivr.net/npm/hls.js@1.5.15/dist/hls.min.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/mpegts.js@1.7.3/dist/mpegts.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/flv.js@1.6.2/dist/flv.min.js"></script>
@@ -17,6 +17,8 @@
     <symbol id="icon-volume-on" viewBox="0 0 24 24"><path d="m11 4-6 5H2v6h3l6 5V4Z"/><path d="M15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"/></symbol>
     <symbol id="icon-volume-off" viewBox="0 0 24 24"><path d="m11 4-6 5H2v6h3l6 5V4Z"/><path d="m16 9 6 6m0-6-6 6"/></symbol>
     <symbol id="icon-fullscreen" viewBox="0 0 24 24"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/></symbol>
+    <symbol id="icon-pip" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2"/><rect x="12" y="11" width="8" height="7" rx="1"/></symbol>
+    <symbol id="icon-close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
     <symbol id="icon-exit-fullscreen" viewBox="0 0 24 24"><path d="M3 8h5V3m8 0v5h5M8 21v-5H3m18 0h-5v5"/></symbol>
     <symbol id="icon-external" viewBox="0 0 24 24"><path d="M14 3h7v7m0-7L10 14"/><path d="M10 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-5"/></symbol>
     <symbol id="icon-danmaku" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="15" rx="3"/><path d="M7 9h5m3 0h2M7 14h2m3 0h5"/></symbol>
@@ -27,8 +29,13 @@
   </svg>
 
   <main class="layout" id="playerLayout">
-    <section class="player-area" aria-label="直播播放器">
-      <div class="player-shell">
+    <section class="player-area" id="playerArea" aria-label="直播播放器">
+      <div class="pip-placeholder" id="pipPlaceholder" hidden>
+        <svg class="icon" aria-hidden="true"><use href="#icon-pip" /></svg>
+        <p>正在小窗中播放</p>
+        <button class="origin-btn" id="pipReturnBtn" type="button">返回页面播放</button>
+      </div>
+      <div class="player-shell" id="playerShell">
         <video id="video" class="video" playsinline webkit-playsinline muted autoplay></video>
         <div class="danmaku-layer" id="danmakuLayer" aria-hidden="true"></div>
         <header class="stage-header">
@@ -64,6 +71,7 @@
           <span class="tap-play-symbol"><svg class="icon" aria-hidden="true"><use href="#icon-play" /></svg></span>
           <span>点击播放</span>
         </button>
+        <div class="pip-message" id="pipMessage" role="status" hidden></div>
         <div class="player-controls" role="group" aria-label="播放控制">
           <div class="controls-start">
             <button class="control-btn" id="refreshBtn" type="button" title="刷新直播" aria-label="刷新直播">
@@ -82,8 +90,14 @@
             <span class="stream-status" id="streamSub">正在连接直播</span>
           </div>
           <div class="controls-end">
+            <button class="control-text pip-comments-toggle" id="pipCommentsBtn" type="button" title="关闭评论栏" aria-label="关闭评论栏" aria-pressed="true" aria-controls="commentPanel">
+              <svg class="icon" aria-hidden="true"><use href="#icon-chat" /></svg>
+            </button>
             <button class="control-text danmaku-toggle is-on" id="danmakuToggleBtn" type="button" aria-pressed="true" title="切换弹幕">
               <svg class="icon" aria-hidden="true"><use href="#icon-danmaku" /></svg><span id="danmakuLabel">弹幕开</span>
+            </button>
+            <button class="control-text pip-control" id="pipBtn" type="button" title="小屏播放" aria-label="小屏播放" aria-pressed="false">
+              <svg class="icon" aria-hidden="true"><use href="#icon-pip" /></svg><span id="pipLabel">小屏</span>
             </button>
             <button class="control-text fullscreen-control" id="fullscreenBtn" type="button" title="切换全屏">
               <svg class="icon" aria-hidden="true"><use href="#icon-fullscreen" /></svg><span id="fullscreenLabel">全屏</span>
@@ -93,10 +107,13 @@
       </div>
     </section>
 
-    <aside class="comment-panel" aria-label="直播评论">
+    <aside class="comment-panel" id="commentPanel" aria-label="直播评论">
       <div class="panel-header">
         <div class="panel-heading"><svg class="icon" aria-hidden="true"><use href="#icon-chat" /></svg><h2>直播评论</h2></div>
         <span class="panel-sub" id="commentSub">连接中...</span>
+        <button class="control-btn pip-comments-close" id="pipCommentsCloseBtn" type="button" title="关闭评论栏" aria-label="关闭评论栏">
+          <svg class="icon" aria-hidden="true"><use href="#icon-close" /></svg>
+        </button>
       </div>
       <div class="comment-tab"><span>全部评论</span></div>
       <div class="comment-body">

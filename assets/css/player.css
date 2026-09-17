@@ -23,7 +23,7 @@ button:disabled { cursor: default; opacity: .4; }
 .icon { display: block; flex: 0 0 auto; width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 
 .layout { display: grid; grid-template-columns: minmax(0, 1fr) 360px; width: 100%; height: 100vh; height: 100dvh; background: #17171d; }
-.player-area { min-width: 0; min-height: 0; }
+.player-area { position: relative; min-width: 0; min-height: 0; }
 .player-shell { position: relative; width: 100%; height: 100%; overflow: hidden; isolation: isolate; background: radial-gradient(ellipse at 22% 35%, #363a41 0, #25262e 36%, #18191f 76%); }
 .player-shell::after { content: ""; position: absolute; inset: 0; z-index: 2; pointer-events: none; background: linear-gradient(180deg, rgba(9, 10, 14, .5), transparent 20%, transparent 76%, rgba(8, 8, 12, .82)); }
 .video { display: block; position: relative; z-index: 1; width: 100%; height: 100%; object-fit: contain; }
@@ -122,6 +122,12 @@ kbd { padding: 1px 4px; border: 1px solid #ffffff24; border-radius: 3px; font: i
 .shortcut-hint { display: inline-flex; align-items: center; gap: 5px; }
 .shortcut-hint kbd { color: #9393a0; border-color: #ffffff17; }
 .layout.fullscreen, .layout:fullscreen { width: 100vw; height: 100vh; height: 100dvh; }
+.pip-placeholder { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; color: #a1a2af; }
+.pip-placeholder > .icon { width: 52px; height: 52px; stroke-width: 1; }
+.pip-placeholder p { margin: 0; font-size: 18px; }
+.pip-placeholder .origin-btn { width: auto; height: auto; margin: 0; }
+.pip-message { position: absolute; z-index: 8; left: 50%; bottom: 74px; width: max-content; max-width: calc(100% - 32px); padding: 10px 14px; border: 1px solid var(--line); border-radius: 6px; background: #292932; color: #eeeef4; font-size: 12px; line-height: 1.6; transform: translateX(-50%); }
+.pip-comments-toggle, .pip-comments-close { display: none; }
 
 /* 鼠标离开画面时收起操作层；键盘导航和触屏仍可直接使用控件。 */
 @media (hover: hover) and (pointer: fine) {
@@ -205,3 +211,40 @@ kbd { padding: 1px 4px; border: 1px solid #ffffff24; border-radius: 3px; font: i
   *, *::before, *::after { transition: none !important; }
   .live-badge[data-state="live"] .live-signal i { animation: none; }
 }
+
+/* 独立置顶窗口：视频始终完整显示，紧凑操作层给竖屏弹幕留出空间。 */
+.pip-window { display: grid; grid-template-columns: minmax(0, 1fr) clamp(140px, 40vw, 200px); width: 100vw; height: 100vh; overflow: hidden; }
+.pip-window.pip-comments-hidden { grid-template-columns: minmax(0, 1fr); }
+.pip-window .player-shell { min-width: 0; height: 100%; background: #111116; }
+.pip-window .stage-header { min-height: 44px; padding: 8px 12px; }
+.pip-window .streamer-avatar,
+.pip-window .streamer-meta,
+.pip-window .origin-btn,
+.pip-window .fullscreen-control,
+.pip-window .control-divider,
+.pip-window .stream-status { display: none; }
+.pip-window .streamer-details h1 { max-width: 100%; margin: 0; font-size: 12px; }
+.pip-window .player-controls { min-height: 48px; padding: 6px 8px; gap: 4px; flex-wrap: wrap; }
+.pip-window .controls-start, .pip-window .controls-end { gap: 4px; }
+.pip-window .controls-start { flex: 1 0 52px; }
+.pip-window .control-btn, .pip-window .control-text { width: 24px; height: 28px; }
+.pip-window .control-text > span { display: none; }
+.pip-window .pip-comments-toggle, .pip-window .pip-comments-close { display: inline-flex; }
+.pip-window .pip-comments-toggle[aria-pressed="false"] { color: var(--muted); }
+.pip-window .danmaku-layer { top: 48px; bottom: 80px; max-height: 55%; }
+.pip-window .danmaku-item { font-size: 16px; }
+.pip-window .status-overlay { padding: 50px 16px 56px; }
+.pip-window .status-symbol { width: 40px; height: 40px; margin-bottom: 12px; }
+.pip-window .status-title { font-size: 16px; }
+.pip-window .status-sub { font-size: 11px; }
+.pip-window .pip-message { bottom: 58px; }
+.pip-window .comment-panel { height: 100%; border-top: 0; border-left: 1px solid var(--line); }
+.pip-window .panel-header { min-height: 44px; padding: 0 10px; gap: 6px; }
+.pip-window .panel-heading { gap: 6px; }
+.pip-window .panel-heading h2 { font-size: 12px; }
+.pip-window .panel-heading .icon { width: 14px; height: 14px; }
+.pip-window .panel-sub, .pip-window .comment-tab, .pip-window .panel-footer { display: none; }
+.pip-window .comment-list { padding: 10px; gap: 6px; }
+.pip-window .comment-item { font-size: 12px; line-height: 1.6; }
+.pip-window .comment-empty { padding: 12px; }
+.pip-window .comment-empty > span { display: none; }
