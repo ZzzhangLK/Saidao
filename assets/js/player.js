@@ -49,8 +49,11 @@
   let refreshInProgress = false;
   let infoRequest = null;
   let streamGeneration = 0;
+  let firstFrameRequest = null;
+  let firstFrameRendered = false;
   let pipWindow = null;
   let pipOpening = false;
+  let nativeVideoFullscreen = !!video.webkitDisplayingFullscreen;
   const PIP_COMMENT_WIDTH = 200;
   let savedCommentScrollTop = 0;
   let audioUnlocked = false;
@@ -91,17 +94,62 @@
 
   const isMobile = () => {
     const ua = navigator.userAgent || "";
-    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua);
+    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua) ||
+      (/Macintosh/i.test(ua) && navigator.maxTouchPoints > 1);
   };
 
-  const showStatus = (title, sub) => {
+  const mobilePlayer = isMobile();
+  document.documentElement.classList.toggle("mobile-player", mobilePlayer);
+  pipBtn.hidden = mobilePlayer;
+  commentPanel.hidden = mobilePlayer;
+
+  const cancelFirstFrameRequest = () => {
+    if (firstFrameRequest !== null) {
+      video.cancelVideoFrameCallback?.(firstFrameRequest);
+      firstFrameRequest = null;
+    }
+  };
+
+  const showStatus = (title, sub, loading = false) => {
     statusTitle.textContent = title;
     statusSub.textContent = sub;
+    statusOverlay.classList.toggle("is-loading", loading);
+    statusOverlay.setAttribute("aria-busy", String(loading));
+    statusOverlay.setAttribute("aria-hidden", "false");
     statusOverlay.classList.remove("hidden");
+    if (!loading) cancelFirstFrameRequest();
   };
 
   const hideStatus = () => {
+    statusOverlay.setAttribute("aria-busy", "false");
+    statusOverlay.setAttribute("aria-hidden", "true");
     statusOverlay.classList.add("hidden");
+  };
+
+  const finishFirstFrame = () => {
+    if (streamEnded || isPageClosing) return;
+    firstFrameRendered = true;
+    cancelFirstFrameRequest();
+    if (statusOverlay.classList.contains("is-loading")) hideStatus();
+  };
+
+  const watchFirstFrame = () => {
+    if (firstFrameRendered || firstFrameRequest !== null ||
+        typeof video.requestVideoFrameCallback !== "function") return;
+    const generation = streamGeneration;
+    firstFrameRequest = video.requestVideoFrameCallback(() => {
+      if (generation !== streamGeneration || streamEnded || isPageClosing ||
+          !statusOverlay.classList.contains("is-loading")) return;
+      firstFrameRequest = null;
+      finishFirstFrame();
+    });
+  };
+
+  const checkFirstFrameFallback = () => {
+    if (typeof video.requestVideoFrameCallback !== "function" &&
+        video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0) {
+      finishFirstFrame();
+    }
   };
 
   const showTapPlay = () => {
@@ -181,6 +229,8 @@
 
   const stopStream = () => {
     streamGeneration += 1;
+    cancelFirstFrameRequest();
+    firstFrameRendered = false;
     if (hls) {
       hls.destroy();
       hls = null;
@@ -282,6 +332,10 @@
   const tryAutoplay = async () => {
     if (streamEnded || isPageClosing) return;
     const generation = streamGeneration;
+    if (!firstFrameRendered) {
+      showStatus("正在加载画面", "精彩即将开始，请稍候", true);
+      watchFirstFrame();
+    }
     if (!audioUnlocked) {
       setMuted(true);
     }
@@ -350,7 +404,7 @@
         });
       } else {
         showStatus("无法播放", "当前浏览器不支持 FLV");
-        return;
+        return false;
       }
     } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
       video.src = url;
@@ -426,8 +480,9 @@
       });
     } else {
       showStatus("无法播放", "当前浏览器不支持该流格式");
-      return;
+      return false;
     }
+    return true;
   };
 
   const clearDanmaku = () => {
@@ -586,10 +641,13 @@
   };
 
   const syncFullscreenState = () => {
-    const isFs = !!document.fullscreenElement;
+    const isFs = !!(document.fullscreenElement || document.webkitFullscreenElement ||
+      nativeVideoFullscreen ||
+      playerLayout.classList.contains("viewport-fullscreen"));
     fullscreenLabel.textContent = isFs ? "退出全屏" : "全屏";
     fullscreenBtn.querySelector("use").setAttribute("href", isFs ? "#icon-exit-fullscreen" : "#icon-fullscreen");
     fullscreenBtn.setAttribute("aria-label", isFs ? "退出全屏" : "全屏");
+    fullscreenBtn.title = isFs ? "退出全屏" : "全屏";
     playerLayout.classList.toggle("fullscreen", isFs);
   };
 
@@ -638,7 +696,7 @@
   };
 
   const openPip = async () => {
-    if (pipOpening || isPageClosing) return;
+    if (mobilePlayer || pipOpening || isPageClosing) return;
     if (pipWindow) {
       pipWindow.close();
       return;
@@ -728,15 +786,14 @@
 
   const init = async () => {
     updateLiveState("loading", "连接中");
-    showStatus("正在连接直播", "正在获取最新直播信息");
+    showStatus("正在连接直播", "精彩即将开始，请稍候", true);
     let requestTimeout = null;
 
     try {
       if (directStreamUrl) {
         originUrl = directStreamUrl;
         updateStreamer({ uname: params.get("name"), uid });
-        attachStream(directStreamUrl);
-        tryAutoplay();
+        if (attachStream(directStreamUrl)) tryAutoplay();
         connectWs();
         return;
       }
@@ -755,12 +812,12 @@
       updateStreamer(data);
       originUrl = data.orig || "";
 
-      if (isMobile()) {
-        if (data.orig) {
-          window.location.href = data.orig;
-          return;
+      if (mobilePlayer && data.channel !== "youtube") {
+        if (originUrl) {
+          window.location.href = originUrl;
+        } else {
+          showStatus("移动端跳转失败", "未返回 orig 链接");
         }
-        showStatus("移动端跳转失败", "未返回 orig 链接");
         return;
       }
 
@@ -769,8 +826,7 @@
         return;
       }
 
-      attachStream(data.m3u8);
-      tryAutoplay();
+      if (attachStream(data.m3u8)) tryAutoplay();
       connectWs();
     } catch (err) {
       if (isPageClosing) return;
@@ -836,13 +892,57 @@
 
   fullscreenBtn.addEventListener("click", async () => {
     try {
-      if (!document.fullscreenElement) {
-        await playerLayout.requestFullscreen();
-      } else {
+      if (document.fullscreenElement) {
         await document.exitFullscreen();
+        syncFullscreenState();
+        return;
+      }
+      if (document.webkitFullscreenElement) {
+        await document.webkitExitFullscreen();
+        syncFullscreenState();
+        return;
+      }
+      if (nativeVideoFullscreen) {
+        video.webkitExitFullscreen();
+        return;
       }
     } catch (err) {
-      fullscreenBtn.title = "当前浏览器暂不支持全屏";
+      showPipMessage("暂时无法退出全屏，请使用浏览器的退出按钮");
+      return;
+    }
+    if (playerLayout.classList.contains("viewport-fullscreen")) {
+      playerLayout.classList.remove("viewport-fullscreen");
+      syncFullscreenState();
+      return;
+    }
+    pipMessage.hidden = true;
+    for (const requestFullscreen of [playerLayout.requestFullscreen, playerLayout.webkitRequestFullscreen]) {
+      if (typeof requestFullscreen !== "function") continue;
+      try {
+        await requestFullscreen.call(playerLayout);
+        syncFullscreenState();
+        return;
+      } catch (err) {
+        // 某些移动浏览器暴露接口但拒绝容器全屏，继续尝试视频原生全屏。
+      }
+    }
+    if (typeof video.webkitEnterFullscreen === "function") {
+      if (video.readyState < 1) {
+        showPipMessage("直播画面加载后即可开启全屏");
+        return;
+      }
+      try {
+        video.webkitEnterFullscreen();
+        return;
+      } catch (err) {
+        // 内嵌浏览器可能禁止系统全屏，手机端退回铺满当前页面。
+      }
+    }
+    if (mobilePlayer) {
+      playerLayout.classList.add("viewport-fullscreen");
+      syncFullscreenState();
+    } else {
+      showPipMessage("当前浏览器暂不支持全屏");
     }
   });
 
@@ -923,8 +1023,22 @@
   });
 
   document.addEventListener("fullscreenchange", syncFullscreenState);
+  document.addEventListener("webkitfullscreenchange", syncFullscreenState);
+  video.addEventListener("webkitbeginfullscreen", () => {
+    nativeVideoFullscreen = true;
+    syncFullscreenState();
+  });
+  video.addEventListener("webkitendfullscreen", () => {
+    nativeVideoFullscreen = false;
+    syncFullscreenState();
+  });
 
   const handlePlayerKeydown = (event) => {
+    if (event.key === "Escape" && playerLayout.classList.contains("viewport-fullscreen")) {
+      playerLayout.classList.remove("viewport-fullscreen");
+      syncFullscreenState();
+      return;
+    }
     if (event.target.closest("input, textarea, [contenteditable='true']")) return;
     if (!event.repeat && event.key.toLowerCase() === "p") {
       toggleSound();
@@ -958,12 +1072,15 @@
   video.addEventListener("volumechange", syncAudioState);
   video.addEventListener("canplay", tryAutoplay);
   video.addEventListener("loadedmetadata", tryAutoplay);
+  video.addEventListener("loadeddata", checkFirstFrameFallback);
+  video.addEventListener("timeupdate", checkFirstFrameFallback);
 
   // 只有实际恢复播放才停止关播轮询，拿到地址不代表直播已恢复。
   video.addEventListener("playing", () => {
     if (streamEnded || isPageClosing) return;
     clearStreamRetryTimer();
-    hideStatus();
+    if (firstFrameRendered || !statusOverlay.classList.contains("is-loading")) hideStatus();
+    else checkFirstFrameFallback();
     hideTapPlay();
     updateLiveState("live", "直播中");
   });
