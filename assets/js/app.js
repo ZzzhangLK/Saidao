@@ -2504,6 +2504,7 @@ function renderAiLabel(contentAnalysis) {
 
         const container = document.getElementById('chatBody');
         container.innerHTML = '';
+        const linkPreviews = window.ChatLinkPreview.create(container);
 
         let socket = null;
         let chatReconnectTimer = null;
@@ -2799,6 +2800,7 @@ function renderAiLabel(contentAnalysis) {
         };
 
         function addMessageToChat(data, options = {}) {
+            linkPreviews.apply(data);
             if (!options.skipBuffer) {
                 bufferChatMessage(data, options.position || 'append');
             }
@@ -2926,6 +2928,7 @@ function renderAiLabel(contentAnalysis) {
 
             // 将消息数据挂到节点上，供容器事件委托读取（替代逐条 addEventListener）
             messageElement._messageData = data;
+            linkPreviews.apply(data, messageElement);
 
             if (shouldStickToBottom) {
                 followChatBottom();
@@ -3840,6 +3843,9 @@ function renderAiLabel(contentAnalysis) {
                 if (data.type === 'user') {
                     // 添加消息到聊天室
                     if (!captureReplayMessage(data)) addMessageToChat(data);
+                } else if (data.type === 'link_preview') {
+                    linkPreviews.receive(data);
+                    scheduleChatScrollToBottom();
                 } else if (data.type === 'history') {
                     if (replay || replayPending) {
                         // Reconnect history is a live snapshot, not the selected historical page.
@@ -3889,6 +3895,7 @@ function renderAiLabel(contentAnalysis) {
                 } else if (data.type === 'hotScoreUpdate') {
                     applyHotScoreUpdate(data.scores);
                 } else if (data.type === 'clear') {
+                    linkPreviews.clear();
                     replayVersion++;
                     replay = null;
                     replayPending = false;

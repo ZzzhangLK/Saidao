@@ -1537,6 +1537,66 @@
             display: none;
         }
 
+        .message-link-preview {
+            display: flex;
+            align-items: center;
+            gap: 3px;
+            min-width: 0;
+            width: max-content;
+            max-width: min(360px, calc(100vw - 130px));
+            height: 30px;
+            margin-top: 8px;
+            padding: 0 10px 0 7px;
+            overflow: hidden;
+            border: 0;
+            border-radius: 7px;
+            background: rgba(255, 247, 211, .74);
+            color: #675229;
+            font-size: 12px;
+            line-height: 1;
+            letter-spacing: .01em;
+            white-space: nowrap;
+        }
+
+        .message-link-preview-icon {
+            display: block;
+            flex: 0 0 14px;
+            width: 14px;
+            height: 14px;
+            padding: 2px;
+            border-radius: 50%;
+            background: #c89435;
+            box-shadow: 0 1px 2px rgba(121, 81, 12, .22);
+        }
+
+        .message-link-preview-copy {
+            display: flex;
+            align-items: center;
+            min-width: 0;
+            overflow: hidden;
+            white-space: nowrap;
+        }
+
+        .message-link-preview-title {
+            min-width: 0;
+            overflow: hidden;
+            color: #4c3a1d;
+            font-weight: 700;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .message-link-preview-separator {
+            flex: 0 0 auto;
+            margin: 0 7px;
+            color: #c6a65c;
+        }
+
+        .message-link-preview-caution {
+            flex: 0 0 auto;
+            color: #806a3a;
+        }
+
         .message-text.image-only {
             background: none;
             border: none;

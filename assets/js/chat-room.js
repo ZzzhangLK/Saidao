@@ -8,6 +8,7 @@
  *  - 所有 DOM 查询基于传入的 root，避免和外部 DOM 冲突。
  *
  * 使用：
+ *   先加载 chat-link-preview.js。
  *   const room = ChatRoom.create({
  *       root: document.getElementById('playerChatSidebar'),
  *       onUnauthenticated: () => Toast.show('请到首页登录后再发送', 'error'),
@@ -119,6 +120,7 @@
             throw new Error('ChatRoom.create: root 内必须包含 .chat-body 元素');
         }
         container.innerHTML = '';
+        const linkPreviews = global.ChatLinkPreview.create(container);
 
         // ====== 闭包内的状态 ======
         let socket = null;
@@ -384,6 +386,7 @@
 
         // ====== 添加普通消息 ======
         function addMessageToChat(data, opts = {}) {
+            linkPreviews.apply(data);
             const isPureImage = isPureImageMessageContent(data.content);
 
             if (!trackRenderedMessage(data.messageId)) return null;
@@ -507,6 +510,7 @@
             }
 
             messageElement._messageData = data;
+            linkPreviews.apply(data, messageElement);
 
             if (shouldStickToBottom) {
                 followChatBottom();
@@ -1606,6 +1610,9 @@
 
                 if (data.type === 'user') {
                     addMessageToChat(data);
+                } else if (data.type === 'link_preview') {
+                    linkPreviews.receive(data);
+                    scheduleChatScrollToBottom();
                 } else if (data.type === 'history') {
                     resetChatMessages();
                     data.messages.forEach((msg) => {
@@ -1634,6 +1641,7 @@
                 } else if (data.type === 'hotScoreUpdate') {
                     try { onHotScoreUpdate(data.scores); } catch (e) { console.warn(e); }
                 } else if (data.type === 'clear') {
+                    linkPreviews.clear();
                     resetChatMessages();
                 }
             });
