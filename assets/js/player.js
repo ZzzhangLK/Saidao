@@ -1,6 +1,6 @@
 ﻿(() => {
   const DEFAULT_UID = "1159606549";
-  const infoBase = "https://api.saidao.cc/player/info/";
+  const infoBase = "https://api.saidao.cc/saidao/player/";
   const wsBase = "wss://api.saidao.cc/player/ws";
 
   const video = document.getElementById("video");
