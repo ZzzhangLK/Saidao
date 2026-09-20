@@ -69,18 +69,12 @@
         }
     }
     async function refresh() {
-        if (document.hidden) return;
+        // WebSocket notifications update the closed button without loading the
+        // full poll page; only an open dialog needs the list request.
+        if (document.hidden || !dialog.open) return;
         if (flight) { refreshAgain = true; return flight; }
         flight = (async () => {
             try {
-                if (!dialog.open) {
-                    const result = unwrap(await window.ApiEndpoints.chatPollStatus());
-                    clockOffset = new Date(result.serverTime).getTime() - Date.now();
-                    activeDeadlines = result.activeEndsAt ?? (result.endsAt ? [result.endsAt] : []);
-                    tick();
-                    if (dialog.open) refreshAgain = true;
-                    return;
-                }
                 const result = unwrap(await window.ApiEndpoints.chatPolls());
                 data = result;
                 activeDeadlines = currentPolls().map(poll => poll.endsAt);
@@ -108,6 +102,16 @@
         await flight;
         flight = null;
         if (refreshAgain) { refreshAgain = false; return refresh(); }
+    }
+    function handleUpdate(update) {
+        if (!update || update.type !== 'pollUpdate') return;
+        const serverTime = Date.parse(update.serverTime);
+        if (Number.isFinite(serverTime)) clockOffset = serverTime - Date.now();
+        if (typeof update.active === 'boolean' && update.endsAt) {
+            activeDeadlines = update.active ? [update.endsAt] : [];
+            tick();
+        }
+        if (dialog.open) refresh();
     }
     function render() {
         const toggle = byId('pollCreateToggle');
@@ -280,11 +284,12 @@
     dialog.addEventListener('click', event => { if (event.target === dialog) { const rect = dialog.getBoundingClientRect(); if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) dialog.close(); } });
     dialog.addEventListener('close', () => { trigger.setAttribute('aria-expanded', 'false'); lastFocus?.focus({ preventScroll: true }); });
     document.addEventListener('click', event => { const button = event.target.closest('.poll-chat-link[data-poll-id]'); if (button) open(Number(button.dataset.pollId)); });
-    document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
-    let ticker, poller;
-    function startTimers() { clearInterval(ticker); clearInterval(poller); ticker = setInterval(tick, 1000); poller = setInterval(refresh, 15000); }
-    window.addEventListener('pagehide', () => { clearInterval(ticker); clearInterval(poller); });
-    window.addEventListener('pageshow', event => { if (event.persisted) { startTimers(); refresh(); } });
-    window.ChatPolls = { open, refresh };
-    startTimers(); refresh();
+    document.addEventListener('visibilitychange', () => { if (!document.hidden && dialog.open) refresh(); });
+    let ticker;
+    function startTimers() { clearInterval(ticker); ticker = setInterval(tick, 1000); }
+    window.addEventListener('pagehide', () => { clearInterval(ticker); });
+    window.addEventListener('pageshow', event => { if (event.persisted) startTimers(); });
+    window.ChatPolls = { open, refresh, handleUpdate };
+    // 掰头状态由聊天室的 pollUpdate WebSocket 消息触发 refresh；这里只负责本地倒计时。
+    startTimers();
 })();

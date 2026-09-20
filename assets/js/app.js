@@ -3854,6 +3854,7 @@ function renderAiLabel(contentAnalysis) {
                     resetChatMessages();
                     // 添加消息到聊天室
                     data.messages.forEach(msg => {
+                        if (msg.type === 'pollUpdate') window.ChatPolls?.handleUpdate(msg);
                         if (msg.type === 'status' || msg.type === 'dailyReportUpdate' || msg.type === 'system' || msg.type === 'pollUpdate') {
                             addSystemMessageToChat(msg, {
                                 stickToBottom: false,
@@ -3874,7 +3875,7 @@ function renderAiLabel(contentAnalysis) {
                     if (!captureReplayMessage(data)) addSystemMessageToChat(data);
                 } else if (data.type === 'pollUpdate') {
                     if (!captureReplayMessage(data)) addSystemMessageToChat(data);
-                    window.ChatPolls?.refresh();
+                    window.ChatPolls?.handleUpdate(data);
                 } else if (data.type === 'onlineCount') {
                     const onlineCount = document.getElementById('onlineCount');
                     onlineCount.textContent = `${data.count}人在线`;
