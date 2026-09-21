@@ -6,9 +6,7 @@
   <meta name="theme-color" content="#202027" />
   <title>Saidao 直播</title>
   <link id="playerStyles" rel="stylesheet" href="assets/css/player.css" />
-  <script defer src="https://cdn.jsdelivr.net/npm/hls.js@1.5.15/dist/hls.min.js"></script>
-  <script defer src="https://cdn.jsdelivr.net/npm/mpegts.js@1.7.3/dist/mpegts.js"></script>
-  <script defer src="https://cdn.jsdelivr.net/npm/flv.js@1.6.2/dist/flv.min.js"></script>
+  <script defer src="assets/vendor/xgplayer/xgplayer.bundle.js"></script>
   <script defer src="assets/js/player.js"></script>
 </head>
 <body>
@@ -36,7 +34,9 @@
         <button class="origin-btn" id="pipReturnBtn" type="button">返回页面播放</button>
       </div>
       <div class="player-shell" id="playerShell">
-        <video id="video" class="video" playsinline webkit-playsinline muted autoplay></video>
+        <div class="media-host" id="mediaHost">
+          <video id="video" class="video" playsinline webkit-playsinline muted autoplay></video>
+        </div>
         <div class="danmaku-layer" id="danmakuLayer" aria-hidden="true"></div>
         <header class="stage-header">
           <div class="streamer">
@@ -68,9 +68,9 @@
             <div class="status-sub" id="statusSub">精彩即将开始，请稍候</div>
           </div>
         </div>
-        <button class="tap-play" id="tapPlayBtn" type="button" aria-label="点击播放直播">
+        <button class="tap-play" id="tapPlayBtn" type="button" aria-label="点击播放并开启声音">
           <span class="tap-play-symbol"><svg class="icon" aria-hidden="true"><use href="#icon-play" /></svg></span>
-          <span>点击播放</span>
+          <span>点击播放并开启声音</span>
         </button>
         <div class="pip-message" id="pipMessage" role="status" hidden></div>
         <div class="player-controls" role="group" aria-label="播放控制">

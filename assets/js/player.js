@@ -4,6 +4,7 @@
   const wsBase = "wss://api.saidao.cc/player/ws";
 
   const video = document.getElementById("video");
+  const mediaHost = document.getElementById("mediaHost");
   const statusOverlay = document.getElementById("statusOverlay");
   const statusTitle = document.getElementById("statusTitle");
   const statusSub = document.getElementById("statusSub");
@@ -43,6 +44,7 @@
 
   let hls = null;
   let flvPlayer = null;
+  let xgPlayer = null;
   let streamRetryTimer = null;
   let playbackTimerWindow = window;
   let flushIntervalId = null;
@@ -245,6 +247,16 @@
       }
       flvPlayer = null;
     }
+    if (xgPlayer) {
+      const muted = video.muted;
+      const volume = video.volume;
+      const closingPlayer = xgPlayer;
+      xgPlayer = null;
+      try { closingPlayer.destroy(); } catch (_) { /* already destroyed */ }
+      if (video.parentNode !== mediaHost) mediaHost.appendChild(video);
+      video.muted = muted;
+      video.volume = volume;
+    }
 
     try {
       video.pause();
@@ -336,17 +348,23 @@
       showStatus("正在加载画面", "精彩即将开始，请稍候", true);
       watchFirstFrame();
     }
-    if (!audioUnlocked) {
-      setMuted(true);
-    }
-
     try {
-      await video.play();
+      try {
+        await video.play();
+      } catch (error) {
+        if (generation !== streamGeneration || streamEnded || isPageClosing) return;
+        // 首次优先有声播放；浏览器拦截后静音重试，不覆盖用户的手动选择。
+        if (error?.name !== "NotAllowedError" || audioUnlocked || video.muted) throw error;
+        setMuted(true);
+        await video.play();
+      }
       if (generation !== streamGeneration || streamEnded || isPageClosing) return;
       hideTapPlay();
       syncAudioState();
+      checkFirstFrameFallback();
     } catch (err) {
       if (generation !== streamGeneration || streamEnded || isPageClosing) return;
+      if (err?.name === "AbortError") return;
       showStatus("需要手动播放", "点击屏幕或按 P 开启声音");
       showTapPlay();
     }
@@ -357,6 +375,68 @@
     streamEnded = false;
 
     const streamType = getStreamType(url);
+
+    const xg = window.SaidaoXgPlayer;
+    const xgPlugin = streamType === "hls" ? xg?.HlsPlugin
+      : streamType === "flv" ? xg?.FlvPlugin
+      : /\.mp4(?:$|[?#])/i.test(url) ? xg?.Mp4Plugin : null;
+    if (xg?.Player && (xgPlugin || /\.mp4(?:$|[?#])/i.test(url))) {
+      try {
+        const generation = streamGeneration;
+        let sourceNotFound = false;
+        let failureScheduled = false;
+        const stopFailedStream = () => {
+          if (failureScheduled) return;
+          failureScheduled = true;
+          // 等插件完成错误回调和轮询计时器登记后再销毁，防止旧轮询重新启动。
+          playbackTimerWindow.setTimeout(() => {
+            if (generation !== streamGeneration || isPageClosing) return;
+            clearStreamRetryTimer();
+            handleStreamEnded(sourceNotFound ? "直播源暂不可用" : "播放连接中断");
+          }, 0);
+        };
+        xgPlayer = new xg.Player({
+          el: mediaHost,
+          // 使用函数避免小窗刷新时跨文档 instanceof HTMLMediaElement 检查失败。
+          mediaEl: () => video,
+          url,
+          width: "100%",
+          height: "100%",
+          volume: video.volume,
+          autoplayMuted: video.muted,
+          isLive: streamType === "hls" || streamType === "flv",
+          autoplay: true,
+          videoInit: false,
+          remainMediaAfterDestroy: true,
+          controls: false,
+          presets: [],
+          closeVideoClick: true,
+          closeVideoDblclick: true,
+          keyShortcut: false,
+          playsinline: true,
+          plugins: xgPlugin ? [xgPlugin] : [],
+          hls: {
+            fetchOptions: {
+              retryCheckFunc: (error) => {
+                if (error?.response?.status !== 404) return true;
+                sourceNotFound = true;
+                stopFailedStream();
+                return false;
+              },
+            },
+          },
+          videoAttributes: { playsinline: true, "webkit-playsinline": true },
+        });
+        const currentPlayer = xgPlayer;
+        currentPlayer.on?.("error", () => {
+          if (xgPlayer === currentPlayer && !isPageClosing) stopFailedStream();
+        });
+        return true;
+      } catch (error) {
+        console.warn("xgplayer 初始化失败，回退原生播放内核", error);
+        xgPlayer = null;
+      }
+    }
 
     if (streamType === "flv") {
       // 优先使用 mpegts.js（支持 HEVC/H.265），回退到 flv.js（仅支持 H.264）
@@ -409,9 +489,6 @@
     } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
       video.src = url;
       video.load();
-      video.play().catch(() => {
-        // handled by tryAutoplay
-      });
     } else if (window.Hls && streamType !== "flv") {
       hls = new Hls({
         lowLatencyMode: true,
@@ -1019,6 +1096,9 @@
   tapPlayBtn.addEventListener("click", (event) => {
     event.stopPropagation();
     audioUnlocked = true;
+    if (video.volume === 0) video.volume = 0.6;
+    setMuted(false);
+    hideTapPlay();
     tryAutoplay();
   });
 
@@ -1059,7 +1139,7 @@
 
   syncCommentListState();
   syncDanmakuState();
-  syncAudioState();
+  setMuted(false);
 
   streamerAvatar.addEventListener("error", () => {
     streamerAvatar.hidden = true;
@@ -1102,7 +1182,7 @@
 
   // 原生 HLS 在源站关播返回 404 时可能只触发 error，不触发 ended。
   video.addEventListener("error", () => {
-    if (!hls && !flvPlayer && !streamEnded) {
+    if (!hls && !flvPlayer && !xgPlayer && !streamEnded) {
       handleStreamEnded("直播连接中断");
     }
   });

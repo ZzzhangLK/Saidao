@@ -1,0 +1,12 @@
+Local browser bundle: xgplayer 3.0.26
+License: MIT
+Source: https://github.com/bytedance/xgplayer
+
+Bundled plugins:
+- xgplayer-hls 3.0.26 (MIT)
+- xgplayer-flv 3.0.26 (MIT)
+- xgplayer-mp4 3.0.26 (MIT)
+
+The generated bundle also includes the transitive runtime modules required by
+these packages. Their package metadata and licenses are available in the npm
+package lock used to build this file.

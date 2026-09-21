@@ -27,6 +27,8 @@ button:disabled { cursor: default; opacity: .4; }
 .player-shell { position: relative; width: 100%; height: 100%; overflow: hidden; isolation: isolate; background: radial-gradient(ellipse at 22% 35%, #363a41 0, #25262e 36%, #18191f 76%); }
 .player-shell::after { content: ""; position: absolute; inset: 0; z-index: 2; pointer-events: none; background: linear-gradient(180deg, rgba(9, 10, 14, .5), transparent 20%, transparent 76%, rgba(8, 8, 12, .82)); }
 .video { display: block; position: relative; z-index: 1; width: 100%; height: 100%; object-fit: contain; }
+.media-host { position: absolute; inset: 0; width: 100%; height: 100%; overflow: hidden; }
+.media-host .video { width: 100% !important; height: 100% !important; object-fit: contain; }
 
 .stage-header { position: absolute; z-index: 7; top: 0; left: 0; right: 0; display: flex; align-items: center; gap: 20px; padding: 12px 22px 10px 18px; min-height: 88px; pointer-events: none; }
 .streamer { display: flex; align-items: center; gap: 10px; min-width: 0; }
