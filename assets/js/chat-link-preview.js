@@ -32,6 +32,9 @@
                 copy.className = 'message-link-preview-copy';
                 const title = bubble.ownerDocument.createElement('span');
                 title.className = 'message-link-preview-title';
+                const titleText = bubble.ownerDocument.createElement('span');
+                titleText.className = 'message-link-preview-title-text';
+                title.append(titleText);
                 const separator = bubble.ownerDocument.createElement('span');
                 separator.className = 'message-link-preview-separator';
                 separator.textContent = '｜';
@@ -42,7 +45,8 @@
                 hint.append(icon, copy);
                 bubble.append(hint);
             }
-            hint.querySelector('.message-link-preview-title').textContent = `· ${preview.title}`;
+            hint.querySelector('.message-link-preview-title-text').textContent = `· ${preview.title}`;
+            hint.querySelector('.message-link-preview-title').title = preview.title;
         }
 
         function receive(data) {

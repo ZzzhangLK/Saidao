@@ -19,6 +19,7 @@
   const pipCommentsBtn = document.getElementById("pipCommentsBtn");
   const pipCommentsCloseBtn = document.getElementById("pipCommentsCloseBtn");
   const commentPanel = document.getElementById("commentPanel");
+  const youtubeChatFrame = document.getElementById("youtubeChatFrame");
   const playerShell = document.getElementById("playerShell");
   const playerArea = document.getElementById("playerArea");
   const originBtn = document.getElementById("originBtn");
@@ -76,6 +77,7 @@
   let streamEnded = false;
 
   const params = new URLSearchParams(window.location.search);
+  let isYoutubeChannel = params.get("channel")?.toLowerCase() === "youtube";
   const uid = params.get("uid") || DEFAULT_UID;
   const directStreamUrl = params.get("src") || params.get("url") || params.get("stream") || "";
 
@@ -654,8 +656,19 @@
     }
   };
 
+  const setYoutubeChat = (enabled) => {
+    enabled = enabled && !mobilePlayer;
+    commentPanel.classList.toggle("has-youtube-chat", enabled);
+    if (!youtubeChatFrame) return;
+    youtubeChatFrame.hidden = !enabled;
+    if (enabled && !youtubeChatFrame.src) youtubeChatFrame.src = `${String(location.pathname || "").replace(/[^/]*$/, "")}index.html?chatOnly=1`;
+    if (!enabled) youtubeChatFrame.removeAttribute("src");
+  };
+
   const connectWs = () => {
-    if (isPageClosing) {
+    if (isPageClosing || isYoutubeChannel) {
+      clearReconnectTimer();
+      closeWs({ preventReconnect: true });
       return;
     }
 
@@ -737,6 +750,12 @@
     const ratio = video.videoWidth / video.videoHeight;
     const maxWidth = Math.floor(window.screen.availWidth * 0.8);
     const maxHeight = Math.floor(window.screen.availHeight * 0.8);
+    if (isYoutubeChannel) {
+      return {
+        width: Math.min(ratio < 1 ? 720 : 1000, maxWidth),
+        height: Math.min(ratio < 1 ? 760 : 560, maxHeight),
+      };
+    }
     const videoWidth = Math.min(ratio < 1 ? 360 : 640, maxWidth - PIP_COMMENT_WIDTH, maxHeight * ratio);
     const height = Math.round(videoWidth / ratio);
     // 竖屏直播加上评论栏后仍优先保持竖向窗口，视频通过 contain 完整显示。
@@ -887,6 +906,8 @@
       const data = await res.json();
       if (isPageClosing) return;
       updateStreamer(data);
+      isYoutubeChannel = String(data.channel).toLowerCase() === "youtube";
+      setYoutubeChat(isYoutubeChannel);
       originUrl = data.orig || "";
 
       if (mobilePlayer && data.channel !== "youtube") {

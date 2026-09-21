@@ -20,7 +20,16 @@
         return !hasVoiceDraft && String(value || '').trim() === '';
     }
 
+    function normalizeCommonEmojiLineBreaks(root) {
+        root.querySelectorAll('img.chat-emoji.common').forEach(image => {
+            const next = image.nextSibling;
+            // The server's emoji HTML template appends one newline after the tag.
+            if (next?.nodeType === 3) next.textContent = next.textContent.replace(/^\r?\n/, '');
+        });
+    }
+
     const api = {
+        normalizeCommonEmojiLineBreaks,
         shouldSendOnChatKeydown,
         shouldInsertLineBreakOnChatKeydown,
         getAutoGrowMetrics,

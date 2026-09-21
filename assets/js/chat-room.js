@@ -480,6 +480,7 @@
             trimChatMessages(position === 'prepend' ? 'bottom' : 'top');
 
             const messageText = messageElement.querySelector('.message-text');
+            ChatInputUtils.normalizeCommonEmojiLineBreaks(messageText);
             const imageEmoji = messageText?.querySelector('img');
 
             if (messageText?.querySelector('.chat-video-card')) {

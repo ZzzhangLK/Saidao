@@ -1,4 +1,5 @@
 ﻿const state = window.SaidaoState;
+const chatOnly = new URLSearchParams(location.search).get("chatOnly") === "1";
 const { WS_BASE_URL } = window.SaidaoConfig;
 const ApiEndpoints = window.ApiEndpoints;
 
@@ -162,7 +163,7 @@ function initializeApp() {
     const chatSidebar = byId('chatSidebar');
     chatSidebar.style.width = `${state.chatWidth}px`;
 
-    if (!state.isMobile) {
+    if (chatOnly || !state.isMobile) {
         chatSidebar.classList.remove('collapsed');
         state.chatExpanded = true;
     }
@@ -903,7 +904,7 @@ function initEventListeners() {
         });
     }
 
-    if (!state.isMobile) {
+    if (!chatOnly && !state.isMobile) {
         initChatResize();
     }
 
@@ -2316,6 +2317,7 @@ function renderAiLabel(contentAnalysis) {
         }
 
         async function fetchNotice() {
+            if (chatOnly) return;
             try {
                 const result = await ApiEndpoints.notice();
                 const notice = String(result.data || '').trim();
@@ -2349,6 +2351,7 @@ function renderAiLabel(contentAnalysis) {
         }
 
         async function fetchStreamers() {
+            if (chatOnly) return;
 
             const result = await ApiEndpoints.saidao();
             streamersData = result.data.map(item => ({
@@ -2394,6 +2397,7 @@ function renderAiLabel(contentAnalysis) {
         }
 
         async function fetchDailyReports() {
+            if (chatOnly) return;
             try {
                 const result = await ApiEndpoints.dailyReportList();
                 dailyReportsData = (result?.data || []).map(item => ({
@@ -2892,6 +2896,7 @@ function renderAiLabel(contentAnalysis) {
 
             // 判断是否是纯图片消息（chat-emoji vip）
             const messageText = messageElement.querySelector('.message-text');
+            ChatInputUtils.normalizeCommonEmojiLineBreaks(messageText);
             const imageEmoji = messageText.querySelector('img');
 
             if (messageText.querySelector('.chat-video-card')) {

@@ -111,6 +111,7 @@ kbd { padding: 1px 4px; border: 1px solid #ffffff24; border-radius: 3px; font: i
 .comment-tab { position: relative; display: flex; align-items: center; gap: 8px; flex: 0 0 auto; height: 49px; margin: 0 20px; border-bottom: 1px solid var(--line); font-size: 13px; font-weight: 500; }
 .comment-tab::after { position: absolute; bottom: -1px; left: 0; width: 25px; height: 2px; border-radius: 2px; background: var(--accent); content: ""; }
 .comment-body { position: relative; display: flex; flex: 1; min-height: 0; overflow: hidden; }
+.youtube-chat-frame { display: block; width: 100%; height: 100%; min-height: 0; border: 0; background: var(--panel, #11151b); }
 .comment-list { display: flex; flex-direction: column; gap: 9px; width: 100%; padding: 20px 18px 24px 20px; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #ffffff26 transparent; }
 .comment-item { flex: 0 0 auto; min-width: 0; font-size: 13px; line-height: 1.8; overflow-wrap: anywhere; }
 .comment-user { color: #82c8df; font-weight: 500; }
@@ -278,3 +279,18 @@ kbd { padding: 1px 4px; border: 1px solid #ffffff24; border-radius: 3px; font: i
 .pip-window .comment-item { font-size: 12px; line-height: 1.6; }
 .pip-window .comment-empty { padding: 12px; }
 .pip-window .comment-empty > span { display: none; }
+
+.youtube-chat-frame[hidden] { display: none; }
+.has-youtube-chat .comment-body > :not(.youtube-chat-frame),
+.has-youtube-chat > :is(.comment-tab, .panel-footer),
+.has-youtube-chat .panel-heading, .has-youtube-chat #commentSub { display: none; }
+.has-youtube-chat > .panel-header { display: none; }
+.pip-window .has-youtube-chat > .panel-header { display: flex; justify-content: flex-end; min-height: 32px; height: 32px; padding: 0 8px; }
+
+/* Match the homepage chat width and keep PiP chat beside the video. */
+@media (min-width: 901px) {
+  .layout:has(> .has-youtube-chat) { grid-template-columns: minmax(0, 1fr) 540px; }
+}
+.pip-window:has(> .has-youtube-chat):not(.pip-comments-hidden) {
+  grid-template-columns: minmax(0, 1fr) clamp(360px, 45vw, 540px);
+}

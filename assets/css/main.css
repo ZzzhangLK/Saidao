@@ -1586,6 +1586,28 @@
             white-space: nowrap;
         }
 
+        .message-link-preview-title-text {
+            display: block;
+            position: relative;
+            width: max-content;
+            min-width: 100%;
+            animation: link-preview-scroll 12s linear infinite alternate;
+        }
+
+        .message-link-preview:hover .message-link-preview-title-text {
+            animation-play-state: paused;
+        }
+
+        @keyframes link-preview-scroll {
+            0%, 15% { left: 0; transform: translateX(0); }
+            85%, 100% { left: 100%; transform: translateX(-100%); }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .message-link-preview-title { overflow-x: auto; text-overflow: clip; }
+            .message-link-preview-title-text { animation: none; }
+        }
+
         .message-link-preview-separator {
             flex: 0 0 auto;
             margin: 0 7px;
@@ -2318,6 +2340,14 @@
         .chat-emoji {
             height: 31%;
             width: 31%;
+        }
+
+        .chat-emoji.common {
+            display: inline-block;
+            width: 24px;
+            height: 24px;
+            object-fit: contain;
+            vertical-align: middle;
         }
 
         .chat-emoji-animation {

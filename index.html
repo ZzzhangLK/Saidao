@@ -17,7 +17,12 @@
     <link rel="stylesheet" href="assets/css/chat-polls.css">
     <link rel="stylesheet" href="assets/css/sliding-captcha.css">
     <link rel="stylesheet" href="assets/css/video-room.css">
+    <script>if (new URLSearchParams(location.search).get("chatOnly") === "1") document.documentElement.classList.add("chat-only");</script>
     <style>
+        html.chat-only, html.chat-only body { overflow: hidden; background: var(--chat-bg, #111); }
+        html.chat-only .container > :not(#chatSidebar) { display: none !important; }
+        html.chat-only #chatSidebar { position: fixed; inset: 0; width: 100% !important; max-width: none; height: 100dvh; transform: none !important; border: 0; box-shadow: none; }
+        html.chat-only #chatResizeHandle, html.chat-only #closeChat, html.chat-only #collapseChat { display: none; }
         @media (prefers-reduced-motion: reduce) {
             * {
                 animation-duration: 0.001ms !important;
