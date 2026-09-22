@@ -285,7 +285,7 @@ kbd { padding: 1px 4px; border: 1px solid #ffffff24; border-radius: 3px; font: i
 .has-youtube-chat > :is(.comment-tab, .panel-footer),
 .has-youtube-chat .panel-heading, .has-youtube-chat #commentSub { display: none; }
 .has-youtube-chat > .panel-header { display: none; }
-.pip-window .has-youtube-chat > .panel-header { display: flex; justify-content: flex-end; min-height: 32px; height: 32px; padding: 0 8px; }
+.layout:has(.has-youtube-chat) .pip-comments-toggle { display: inline-flex; }
 
 /* Match the homepage chat width and keep PiP chat beside the video. */
 @media (min-width: 901px) {
@@ -294,3 +294,4 @@ kbd { padding: 1px 4px; border: 1px solid #ffffff24; border-radius: 3px; font: i
 .pip-window:has(> .has-youtube-chat):not(.pip-comments-hidden) {
   grid-template-columns: minmax(0, 1fr) clamp(360px, 45vw, 540px);
 }
+.layout.chat-panel-hidden { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }

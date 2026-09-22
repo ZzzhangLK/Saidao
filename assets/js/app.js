@@ -1287,6 +1287,10 @@ function renderAiLabel(contentAnalysis) {
 
         // 切换聊天室显示/隐藏
         function toggleChat() {
+            if (chatOnly && window.parent !== window) {
+                window.parent.postMessage({ type: 'saidao-chat-close' }, location.origin);
+                return;
+            }
             const chatSidebar = byId('chatSidebar');
             const chatToggleIcon = $('i', byId('collapseChat'));
 
@@ -3848,6 +3852,15 @@ function renderAiLabel(contentAnalysis) {
                 if (data.type === 'user') {
                     // 添加消息到聊天室
                     if (!captureReplayMessage(data)) addMessageToChat(data);
+                    if (chatOnly && window.parent !== window && !data.deleted &&
+                        data.messageKind !== 'voice' && !shouldFilterChatMessage(data)) {
+                        const content = document.createElement('template');
+                        content.innerHTML = data.content || '';
+                        if (!content.content.querySelector('img, video, audio, iframe, .chat-video-card')) {
+                            const text = content.content.textContent.trim();
+                            if (text) window.parent.postMessage({ type: 'saidao-chat-danmaku', text: text.slice(0, 512) }, location.origin);
+                        }
+                    }
                 } else if (data.type === 'link_preview') {
                     linkPreviews.receive(data);
                     scheduleChatScrollToBottom();

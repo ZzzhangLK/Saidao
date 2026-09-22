@@ -589,7 +589,8 @@
 
     const node = danmakuLayer.ownerDocument.createElement("div");
     node.className = "danmaku-item";
-    node.innerHTML = item.text || "";
+    if (item.plainText) node.textContent = item.text || "";
+    else node.innerHTML = item.text || "";
     node.style.visibility = "hidden";
     node.style.animationName = "none";
     node.style.top = `${4 + lane * DANMAKU_LANE_HEIGHT}px`;
@@ -656,12 +657,25 @@
     }
   };
 
+  const handleChatDanmaku = (event) => {
+    if (isPageClosing || !isYoutubeChannel || event.origin !== window.location.origin ||
+        !youtubeChatFrame?.contentWindow || event.source !== youtubeChatFrame.contentWindow) return;
+    if (event.data?.type === "saidao-chat-close") {
+      setPipCommentsVisible(false);
+      return;
+    }
+    if (event.data?.type !== "saidao-chat-danmaku" || typeof event.data.text !== "string") return;
+    const text = event.data.text.trim().slice(0, 512);
+    if (text) addDanmaku({ text, plainText: true });
+  };
+  window.addEventListener("message", handleChatDanmaku);
+
   const setYoutubeChat = (enabled) => {
     enabled = enabled && !mobilePlayer;
     commentPanel.classList.toggle("has-youtube-chat", enabled);
     if (!youtubeChatFrame) return;
     youtubeChatFrame.hidden = !enabled;
-    if (enabled && !youtubeChatFrame.src) youtubeChatFrame.src = `${String(location.pathname || "").replace(/[^/]*$/, "")}index.html?chatOnly=1`;
+    if (enabled && !youtubeChatFrame.src) youtubeChatFrame.src = `${String(location.pathname || "").replace(/[^/]*$/, "")}index.html?chatOnly=1&v=20260922-1`;
     if (!enabled) youtubeChatFrame.removeAttribute("src");
   };
 
@@ -772,10 +786,11 @@
   };
 
   const setPipCommentsVisible = (visible) => {
-    if (!pipWindow) return;
+    if (!pipWindow && (!isYoutubeChannel || mobilePlayer)) return;
     if (!visible && !commentPanel.hidden) savedCommentScrollTop = commentList.scrollTop;
     commentPanel.hidden = !visible;
-    pipWindow.document.body.classList.toggle("pip-comments-hidden", !visible);
+    playerLayout.classList.toggle("chat-panel-hidden", !visible);
+    pipWindow?.document.body.classList.toggle("pip-comments-hidden", !visible);
     pipCommentsBtn.setAttribute("aria-pressed", String(visible));
     pipCommentsBtn.title = visible ? "关闭评论栏" : "显示评论栏";
     pipCommentsBtn.setAttribute("aria-label", pipCommentsBtn.title);
@@ -838,6 +853,7 @@
       danmakuResizeObserver.disconnect();
       const restorePlayer = () => {
         if (pipWindow !== openedWindow) return;
+        openedWindow.removeEventListener("message", handleChatDanmaku);
         const wasPlaying = !video.paused;
         pipResizeObserver.disconnect();
         pipDocument.removeEventListener("keydown", handlePlayerKeydown);
@@ -845,8 +861,9 @@
         if (!commentPanel.hidden) savedCommentScrollTop = commentList.scrollTop;
         playerArea.appendChild(playerShell);
         playerLayout.appendChild(commentPanel);
-        commentPanel.hidden = false;
         pipWindow = null;
+        if (isYoutubeChannel) setPipCommentsVisible(!commentPanel.hidden);
+        else commentPanel.hidden = false;
         if (!isPageClosing) danmakuResizeObserver.observe(danmakuLayer);
         movePlaybackTimers(window);
         clearDanmaku();
@@ -855,13 +872,14 @@
         if (wasPlaying && !isPageClosing) tryAutoplay();
       };
       openedWindow.addEventListener("pagehide", restorePlayer, { once: true });
+      openedWindow.addEventListener("message", handleChatDanmaku);
       pipDocument.addEventListener("keydown", handlePlayerKeydown);
       pipDocument.addEventListener("click", handlePlayerClick);
       const wasPlaying = !video.paused;
       clearDanmaku();
       pipDocument.body.appendChild(playerShell);
       pipDocument.body.appendChild(commentPanel);
-      setPipCommentsVisible(true);
+      setPipCommentsVisible(isYoutubeChannel ? !commentPanel.hidden : true);
       pipResizeObserver.observe(danmakuLayer);
       // 让可见小窗驱动弹幕与关播重试，避免母页切入后台后的定时器限频。
       movePlaybackTimers(openedWindow);
