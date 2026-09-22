@@ -1,0 +1,37 @@
+.moments-overlay { position: absolute; inset: var(--moments-header-height, 70px) 0 0; z-index: 10000; display: flex; justify-content: flex-end; align-items: flex-start; background: #0006; padding: 12px; }
+.moments-overlay[hidden] { display: none; }
+.moments-panel { display: flex; flex-direction: column; width: min(440px, 100%); max-height: calc(100% - 12px); background: var(--bg-color); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 6px; box-shadow: 0 8px 24px #0003; overflow: hidden; }
+.moments-heading { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border-bottom: 1px solid var(--chat-border); }
+.moments-heading strong { display: block; font-size: 15px; font-weight: 600; }
+.moments-heading span { display: block; font-size: 11px; color: var(--text-secondary); }
+.moments-heading button, .chat-replay button { border: 0; background: transparent; color: inherit; cursor: pointer; min-width: 32px; height: 32px; border-radius: 4px; }
+.moments-heading button:hover, .chat-replay button:hover { background: var(--chat-border); }
+.moments-status { flex: 0 0 auto; font-size: 12px; color: var(--text-secondary); padding: 0 14px; line-height: 28px; }
+.moments-status:empty { display: none; }
+.moments-flow { position: relative; padding: 18px 14px; margin: 0; list-style: none; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.moments-flow li { --moment-accent: #248e87; position: relative; display: grid; grid-template-columns: minmax(0, 1fr) 28px minmax(0, 1fr); padding: 0 0 12px; }
+.moments-flow li:nth-child(4n+2) { --moment-accent: #5288ca; }
+.moments-flow li:nth-child(4n+3) { --moment-accent: #ba892e; }
+.moments-flow li:nth-child(4n) { --moment-accent: #cd687f; }
+.moments-flow li::before, .moments-flow li::after { content: ''; position: absolute; box-sizing: border-box; left: 50%; transform: translateX(-50%); pointer-events: none; }
+.moments-flow li::before { width: 2px; border-left: 2px dashed var(--text-light); top: 0; bottom: 0; }
+.moments-flow li::after { top: 22px; width: 14px; height: 14px; border-radius: 50%; background: var(--bg-color); border: 2px solid var(--moment-accent); }
+.moments-topic { grid-column: 1; min-width: 0; width: 100%; border: 1px solid var(--border-color); background: var(--msg-bg-color); color: var(--text-primary); border-radius: 4px; padding: 5px 5px 10px; text-align: left; cursor: pointer; }
+.moments-flow li:nth-child(even) .moments-topic { grid-column: 3; }
+.moment-date { display: block; padding: 4px 6px; border-radius: 2px; background: color-mix(in srgb, var(--moment-accent) 30%, white); color: #24343b; font-size: 11px; font-weight: 600; white-space: nowrap; }
+.moments-topic strong { display: block; font-size: 13px; line-height: 20px; padding: 8px 6px 3px; font-weight: 700; overflow-wrap: anywhere; }
+.moment-summary { margin: 0; padding: 2px 6px 8px; font-size: 12px; line-height: 1.65; color: var(--text-primary); overflow-wrap: anywhere; white-space: normal; }
+.moment-summary:empty { display: none; }
+.moment-stats { display: flex; flex-wrap: wrap; gap: 2px 8px; padding: 2px 6px 0; color: var(--text-secondary); font-size: 10px; line-height: 17px; }
+.moment-stats span { white-space: nowrap; }
+.moments-topic:hover, .moments-topic.is-selected { border-color: var(--moment-accent); }
+.moments-topic:focus-visible, #momentsOpen:focus-visible { outline: 2px solid #df5073; outline-offset: 2px; }
+.chat-replay { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 5px 12px; flex: 0 0 auto; border-bottom: 1px solid var(--chat-border); color: var(--text-primary); background: var(--chat-bg); font-size: 11px; }
+#chatReplayLabel { flex: 1 1 130px; min-width: 0; overflow-wrap: anywhere; }
+.chat-replay-actions { display: flex; margin-left: auto; align-items: center; }
+.chat-replay button:disabled { opacity: .4; cursor: default; }
+#chatReplayLatest { font-size: 11px; padding: 0 6px; width: auto; white-space: nowrap; }
+.chat-replay[hidden] { display: none; }
+.chat-message.moment-anchor { outline: 2px solid #df5073; outline-offset: -2px; }
+.chat-replay-empty { color: var(--text-secondary); font-size: 12px; padding: 24px 12px; text-align: center; }
+@media (max-width: 360px) { .moments-overlay { padding: 8px; } .moments-flow { padding: 14px 8px; } .moments-flow li { grid-template-columns: minmax(0, 1fr) 22px minmax(0, 1fr); } .moment-date { font-size: 10px; padding: 4px; } }

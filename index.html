@@ -1,0 +1,606 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="referrer" content="origin">
+    <title>Saidao</title>
+    <meta name="description" content="Saidao live hub">
+    <meta name="theme-color" content="#000000">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="apple-touch-icon" href="icon-192x192.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="assets/css/main.css?v=20260922-1">
+    <link rel="stylesheet" href="assets/css/chat-moments.css?v=20260922-1">
+    <link rel="stylesheet" href="assets/css/chat-polls.css?v=20260922-1">
+    <link rel="stylesheet" href="assets/css/sliding-captcha.css?v=20260922-1">
+    <link rel="stylesheet" href="assets/css/video-room.css?v=20260922-1">
+    <script>if (new URLSearchParams(location.search).get("chatOnly") === "1") document.documentElement.classList.add("chat-only");</script>
+    <style>
+        html.chat-only, html.chat-only body { overflow: hidden; background: var(--chat-bg, #111); }
+        html.chat-only .container > :not(#chatSidebar) { display: none !important; }
+        html.chat-only #chatSidebar { position: fixed; inset: 0; width: 100% !important; max-width: none; height: 100dvh; transform: none !important; border: 0; box-shadow: none; }
+        html.chat-only #chatResizeHandle, html.chat-only #collapseChat { display: none; }
+        @media (prefers-reduced-motion: reduce) {
+            * {
+                animation-duration: 0.001ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: 0.001ms !important;
+            }
+        }
+    </style>
+    <script>
+        (function () {
+            const prefersReduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+            const saveData = navigator.connection && navigator.connection.saveData;
+            const lowCpu = typeof navigator.hardwareConcurrency === 'number' && navigator.hardwareConcurrency <= 4;
+            const lowMem = typeof navigator.deviceMemory === 'number' && navigator.deviceMemory <= 4;
+            const isSmallScreen = window.innerWidth <= 768;
+            const reduceMotion = prefersReduce || saveData || lowCpu || lowMem || isSmallScreen;
+
+            document.documentElement.classList.toggle('reduced-motion', reduceMotion);
+            window.__REDUCE_MOTION__ = reduceMotion;
+            window.__LIMITED_MOTION__ = reduceMotion;
+        })();
+    </script>
+    <script defer src="https://cdn.jsdelivr.net/npm/hls.js@1.5.15/dist/hls.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/mpegts.js@1.7.3/dist/mpegts.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/@fingerprintjs/fingerprintjs@4/dist/fp.min.js"></script>
+    <script defer src="assets/js/config.js?v=20260922-1"></script>
+    <script defer src="assets/js/api.js?v=20260922-1"></script>
+    <script defer src="assets/js/sliding-captcha.js?v=20260922-1"></script>
+    <script defer src="assets/js/chat-input-utils.js?v=20260922-1"></script>
+    <script defer src="assets/js/chat-voice-utils.js?v=20260922-1"></script>
+    <script defer src="assets/js/video-room.js?v=20260922-1"></script>
+    <script defer src="assets/js/chat-quote-utils.js?v=20260922-1"></script>
+    <script defer src="assets/js/chat-link-preview.js?v=20260922-1"></script>
+    <script defer src="assets/js/battle-ui.js?v=20260922-1"></script>
+    <script defer src="assets/js/app.js?v=20260922-1"></script>
+    <script defer src="assets/js/chat-moments.js?v=20260922-1"></script>
+    <script defer src="assets/js/chat-polls.js?v=20260922-1"></script>
+</head>
+<body>
+<div class="container">
+    <!-- 头部 -->
+    <header>
+        <div class="brand-stack">
+            <div class="logo">
+                <img class="logo-image" src="assets/images/saidao_logo_0915-no-bg.png" alt="saidao" width="1469" height="743">
+            </div>
+            <div class="notice-bar" id="noticeBar" hidden role="status">
+                <i class="fas fa-bullhorn" id="noticeIcon" aria-hidden="true" hidden></i>
+                <div class="notice-scroll-viewport">
+                    <span class="notice-scroll-track" id="noticeText"></span>
+                </div>
+            </div>
+        </div>
+
+        <div id="global-loading" hidden>
+            <div class="global-loading-spinner" role="status" aria-label="加载中"></div>
+        </div>
+
+        <div class="header-controls">
+            <button class="btn btn-secondary btn-icon" id="sponsorBtn" >
+                <i class="fas fa-heart"></i>
+            </button>
+            <!-- PWA安装按钮（默认隐藏） -->
+            <button class="btn btn-primary btn-icon" id="installButton" style="display: none;">
+                <i class="fas fa-download"></i>
+            </button>
+            <!-- 深色模式按钮 -->
+            <button class="btn btn-secondary btn-icon" id="darkModeToggleBtn">
+                <i class="fas fa-moon"></i>
+            </button>
+            <!-- 隐藏复选框 -->
+            <input type="checkbox" id="darkModeToggle" style="display: none;">
+            <button class="btn btn-primary" id="loginBtn">
+                <i class="fas fa-user"></i>
+                <span class="btn-text">登录/注册</span>
+            </button>
+            <img alt="用户头像" class="user-avatar" id="userAvatar" style="display: none;">
+        </div>
+    </header>
+
+    <!-- 筛选器 -->
+    <div class="filter-section">
+        <div class="filter-tabs">
+            <button class="filter-tab active" data-status="live">直播中</button>
+            <button class="filter-tab" data-status="all">全部</button>
+            <button class="filter-tab report-tab" data-status="dailyReport">
+                抽象日报
+                <span class="tab-dot" id="reportTabDot" hidden>更新啦</span>
+            </button>
+<!--            <button class="filter-tab" data-status="videoRoom">-->
+<!--                点播室-->
+<!--            </button>-->
+            <button class="btn refresh-btn" id="refreshBtn" aria-label="刷新当前列表">
+                <span class="refresh-icon">↻</span>
+                <span>刷新</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- 在页面 body 里加入一个容器 -->
+    <div id="toast-container"></div>
+
+    <!-- 主播卡片容器 -->
+    <div class="cards-container">
+        <div class="cards-grid" id="cardsGrid">
+            <!-- 卡片将通过JavaScript动态生成 -->
+        </div>
+    </div>
+    
+    <!-- 点播室模块 (独立tab) -->
+<!--    <div class="video-room-container" id="videoRoomContainer" hidden>-->
+<!--        <div class="video-room">-->
+<!--            <div class="video-room-player-section">-->
+<!--                <video id="videoRoomPlayer" class="video-room-player" controls referrerpolicy="no-referrer" hidden></video>-->
+<!--                <div class="video-room-empty" id="videoRoomEmpty">-->
+<!--                    <i class="fas fa-video"></i>-->
+<!--                    <p>暂无正在播放的视频</p>-->
+<!--                    <p>快来点播一个吧！</p>-->
+<!--                </div>-->
+<!--            </div>-->
+<!--            -->
+<!--            <div class="video-room-sidebar">-->
+<!--                <div class="video-room-section">-->
+<!--                    <h3>播放列表 (<span class="count" id="playlistCount">0</span>)</h3>-->
+<!--                    <div class="video-playlist" id="videoPlaylist"></div>-->
+<!--                </div>-->
+<!--                -->
+<!--                <div class="video-room-section">-->
+<!--                    <h3>投票中 (<span class="count" id="votingCount">0</span>/10)</h3>-->
+<!--                    <div class="video-voting" id="videoVoting"></div>-->
+<!--                </div>-->
+<!--                -->
+<!--                <div class="video-room-input">-->
+<!--                    <input type="text" id="bvidInput" placeholder="输入BV号 (例如：BV1czKY67EDQ)" maxlength="32">-->
+<!--                    <button class="btn btn-primary" id="submitBvid">提交点播</button>-->
+<!--                </div>-->
+<!--            </div>-->
+<!--        </div>-->
+<!--    </div>-->
+
+
+
+    <!-- 聊天室侧边栏 -->
+    <div class="chat-sidebar collapsed" id="chatSidebar">
+        <div class="chat-resize-handle" id="chatResizeHandle"></div>
+        <div class="chat-header">
+            <div class="chat-title">
+                <i class="fas fa-comments"></i>
+                聊天室
+                <span class="online-count" id="onlineCount"></span>
+                <button class="chat-hotwords-toggle" id="chatHotWordsToggle" type="button" title="收起 Hot 模块" aria-label="切换 Hot 模块">
+                    <i class="fas fa-fire"></i>
+                </button>
+            </div>
+            <div class="chat-actions">
+                <button class="chat-close" id="closeChat" type="button" title="关闭聊天室" aria-label="关闭聊天室">
+                    <i class="fas fa-times-circle"></i>
+                </button>
+            </div>
+            <button class="chat-toggle" id="collapseChat">
+                <i class="fas fa-comment-dots"></i>
+            </button>
+        </div>
+        <div class="chat-hotwords" id="chatHotWords" hidden></div>
+        <div class="moments-overlay" id="chatMoments" hidden>
+            <section class="moments-panel" role="dialog" aria-modal="true" aria-labelledby="momentsTitle" tabindex="-1">
+                <div class="moments-heading">
+                    <div><strong id="momentsTitle">timeline</strong><span id="momentsRange">近 2 小时</span></div>
+                    <button id="momentsClose" type="button" title="关闭时间线" aria-label="关闭时间线"><i class="fas fa-xmark" aria-hidden="true"></i></button>
+                </div>
+                <div class="moments-status" id="momentsStatus" role="status"></div>
+                <ol class="moments-flow" id="momentsTopics" aria-label="聊天时间线"></ol>
+            </section>
+        </div>
+        <div class="chat-replay" id="chatReplay" hidden>
+            <span id="chatReplayLabel" role="status"></span>
+            <div class="chat-replay-actions">
+                <button id="chatReplayBefore" type="button" title="更早记录" aria-label="更早记录"><i class="fas fa-arrow-up" aria-hidden="true"></i></button>
+                <button id="chatReplayAfter" type="button" title="更晚记录" aria-label="更晚记录"><i class="fas fa-arrow-down" aria-hidden="true"></i></button>
+                <button id="chatReplayLatest" type="button">回到最新</button>
+            </div>
+        </div>
+        <div class="chat-body" id="chatBody">
+            <!-- 聊天消息将通过JavaScript动态生成 -->
+        </div>
+
+        <div class="quote-preview" id="quotePreview"></div>
+        <div class="chat-footer">
+            <div class="emoji-section" id="emojiSection">
+                <div class="emoji-tabs">
+                    <button class="emoji-tab" data-group="common">常用表情</button>
+                    <button class="emoji-tab" data-group="animation">动画表情</button>
+                    <button class="emoji-tab active" data-group="vip">test</button>
+                </div>
+                <div class="emoji-container" id="emojiContainer">
+                    <!-- 表情将通过JavaScript动态生成 -->
+                </div>
+            </div>
+            <div class="chat-filter-row">
+                <label class="chat-image-filter">
+                    <input type="checkbox" id="blockImageMessages">
+                    <span>隐藏图片消息</span>
+                </label>
+                <button class="chat-filter-settings" id="openChatFilterModal" type="button">
+                    <i class="fas fa-ban"></i>
+                    屏蔽设置
+                </button>
+                <button class="chat-filter-settings" id="momentsOpen" type="button" title="打开时间线" aria-haspopup="dialog" aria-expanded="false">
+                    <i class="fas fa-timeline" aria-hidden="true"></i>
+                    时间线
+                </button>
+                <button class="chat-filter-settings" id="pollsOpen" type="button" title="打开掰头" aria-haspopup="dialog" aria-expanded="false">
+                    <i class="fas fa-square-poll-vertical" aria-hidden="true"></i>
+                    掰头<span class="poll-badge" id="pollsBadge" hidden></span>
+                </button>
+            </div>
+            <div class="chat-input-container">
+                <button class="emoji-picker-toggle" id="emojiPickerToggle" type="button" title="表情" aria-label="表情">
+                    <i class="far fa-smile"></i>
+                </button>
+                <div class="voice-draft" id="voiceDraft" hidden></div>
+                <div class="chat-input-shell" id="chatInputShell">
+                    <button class="voice-toggle" id="voiceToggle" type="button" title="录音" aria-label="录音">
+                        <i class="fas fa-microphone"></i>
+                    </button>
+                    <textarea class="chat-input" id="chatInput" placeholder="来嘟两句呗..." maxlength="256" rows="1"></textarea>
+                </div>
+                <button class="voice-recording-panel" id="voiceRecordingPanel" type="button" hidden>
+                    <span class="voice-recording-dot"></span>
+                    <span>正在录音</span>
+                    <span class="voice-recording-time" id="voiceRecordingTime">0:00</span>
+                    <span class="voice-recording-hint">点击结束</span>
+                </button>
+                <button class="chat-tool-btn chat-send-toggle" id="emojiToggle" type="button" title="发送" aria-label="发送" disabled>
+                    <i class="fas fa-paper-plane"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal" id="chatFilterModal">
+    <div class="modal-content chat-filter-modal-content">
+        <div class="modal-header">
+            <h3 class="modal-title">弹幕屏蔽</h3>
+            <button class="modal-close" id="closeChatFilterModal" type="button"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="modal-body">
+            <p class="chat-filter-hint">通过消息右键或长按添加用户或 IP 属地屏蔽。</p>
+            <div class="form-group">
+                <label class="form-label">直播间屏蔽</label>
+                <div class="game-filter-toggle">
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="blockGameLive">
+                        <span class="toggle-slider"></span>
+                    </label>
+                    <span class="game-filter-label">屏蔽游戏直播</span>
+                    <i class="fas fa-circle-question game-filter-help"
+                       id="blockGameLiveHelp"
+                       role="button"
+                       tabindex="0"
+                       aria-label="屏蔽游戏直播说明"
+                       title="点击查看说明"></i>
+                    <span class="game-filter-count" id="gameFilterCount" hidden></span>
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">已屏蔽对象</label>
+                <div class="chat-filter-list" id="blockedUsersList"></div>
+            </div>
+            <div class="form-group">
+                <label class="form-label" for="blockedKeywordPatterns">屏蔽关键词（正则）</label>
+                <textarea class="form-input" id="blockedKeywordPatterns" rows="4" placeholder="例如：广告|推广&#10;https?://\S+"></textarea>
+            </div>
+            <div class="chat-filter-actions">
+                <button class="btn btn-secondary" id="clearChatFilterRules" type="button">清空</button>
+                <button class="btn btn-primary" id="saveChatFilterRules" type="button">保存</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 登录模态框 -->
+<div class="modal" id="loginModal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 class="modal-title">登录</h3>
+            <button class="modal-close" id="closeLoginModal">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <form id="loginForm">
+                <div class="form-group">
+                    <label class="form-label" for="loginAccount">账号或邮箱</label>
+                    <input type="text" class="form-input" id="loginAccount" placeholder="请输入账号或邮箱" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="loginPassword">密码</label>
+                    <input type="password" class="form-input" id="loginPassword" placeholder="请输入密码" required>
+                </div>
+                <div class="form-group">
+                    <button type="submit" class="btn btn-primary" style="width: 100%; padding: 12px;">
+                        登录
+                    </button>
+                </div>
+                <div class="form-group" style="text-align: center;">
+                    <p style="color: var(--text-light); margin-bottom: 8px; font-size: 14px;">还没有账号？系统将自动分配账号与6位初始密码。</p>
+                    <button type="button" class="btn btn-secondary" id="allocateAccount" style="width: 100%; padding: 12px;">
+                        分配账号
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- 图形验证码模态框 -->
+<div class="modal" id="captchaModal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 class="modal-title">安全验证</h3>
+            <button class="modal-close" id="closeCaptchaModal"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="modal-body">
+            <div class="form-group" style="text-align: center;">
+                <img id="captchaImage" src="" alt="图形验证码" style="height: 80px; cursor: pointer;">
+            </div>
+            <div class="form-group">
+                <label class="form-label" for="captchaCode">验证码</label>
+                <input type="text" class="form-input" id="captchaCode" placeholder="请输入图形验证码" required>
+            </div>
+            <div class="form-group">
+                <button type="button" class="btn btn-primary" id="confirmCaptchaBtn" style="width: 100%; padding: 12px;">确认并分配账号</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 账号分配结果模态框 -->
+<div class="modal" id="allocationResultModal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 class="modal-title">账号已分配</h3>
+            <button class="modal-close" id="closeAllocationResult">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <p class="form-hint" style="margin-bottom: 16px;">账号体系已改为自动分配。请保存以下凭据，登录后可修改密码。</p>
+            <div class="form-group"><label class="form-label">账号</label><div class="form-input" id="allocatedAccount"></div></div>
+            <div class="form-group"><label class="form-label">初始密码</label><div class="form-input" id="allocatedPassword"></div></div>
+            <div class="form-group">
+                <button type="button" class="btn btn-secondary" id="copyAllocationCredentials" style="width: 100%; padding: 12px;"><i class="fas fa-copy"></i> 复制账号密码</button>
+            </div>
+            <div class="form-group">
+                <button type="button" class="btn btn-primary" id="finishAllocation" style="width: 100%; padding: 12px;">进入主页</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 个人信息编辑模态框 -->
+<div class="modal" id="profileModal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 class="modal-title">编辑个人信息</h3>
+            <button class="modal-close" id="closeProfileModal">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <form id="profileForm">
+                <div class="form-group" style="text-align: center;">
+                    <img class="detail-avatar" id="profileAvatar">
+                    <input
+                            type="file"
+                            id="avatarFileInput"
+                            accept="image/*"
+                            style="display:none"
+                    />
+                    <button type="button" class="btn btn-secondary" id="changeAvatarBtn" style="margin-top: 8px; padding: 8px 16px; font-size: 13px;">
+                        更换头像
+                    </button>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="profileName">昵称</label>
+                    <input type="text" class="form-input" id="profileName" placeholder="请输入昵称" required maxlength="16">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="profileBio">个性签名</label>
+                    <textarea class="form-input" id="profileBio" placeholder="请输入个性签名" rows="3" maxlength="100"></textarea>
+                </div>
+
+                <div class="form-group">
+                    <div class="form-label-row">
+                        <label class="form-label">选择阵营</label>
+                        <span class="form-hint" style="color: #f39c12;">
+                            <i class="fas fa-exclamation-circle"></i> 选择后30天内不能更换
+                        </span>
+                    </div>
+                    <div class="faction-options-row">
+                        <div class="faction-option-row" data-faction="ya">
+                            <div class="faction-animation-row" id="yaAnimation">
+                                <img class="faction-static-image" src="https://dummyimage.com/100x100/ff6b6b/ffffff&text=YA" alt="牙阵营">
+                            </div>
+                            <div class="faction-content-row">
+                                <div class="faction-title-row">
+                                    <span class="faction-name">牙</span>
+                                </div>
+                            </div>
+                            <div class="faction-select-row">
+                                <input type="radio" name="faction" id="factionYa" value="ya">
+                                <label for="factionYa"></label>
+                            </div>
+                        </div>
+
+                        <div class="faction-option-row" data-faction="juan">
+                            <div class="faction-animation-row" id="juanAnimation">
+                                <img class="faction-static-image" src="https://rustfs.saidao.cc/images/0bc9460c-d3c0-4d59-80e3-7e437a798ca0.png" alt="卷阵营">
+                            </div>
+                            <div class="faction-content-row">
+                                <div class="faction-title-row">
+                                    <span class="faction-name">卷</span>
+                                </div>
+                            </div>
+                            <div class="faction-select-row">
+                                <input type="radio" name="faction" id="factionJuan" value="juan">
+                                <label for="factionJuan"></label>
+                            </div>
+                        </div>
+                    </div>
+                    <input type="hidden" id="selectedFaction" value="">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">开播通知</label>
+                    <p class="form-hint">选择一种接收开播通知的方式</p>
+                    <div class="webhook-options">
+                        <div class="webhook-option" data-type="dingtalk">
+                            <div class="webhook-icon">
+                                <i class="fas fa-bell"></i>
+                            </div>
+                            <div>
+                                <div style="font-weight: 500; font-size: 14px;">钉钉</div>
+<!--                                <a style="font-size: 12px; color: var(&#45;&#45;text-light);" href="https://help.gitee.com/webhook/webhook-for-wecom-robot">创建机器人</a>-->
+<!--                                <div style="font-size: 12px; color: var(&#45;&#45;text-light);">通过钉钉机器人接收开播通知</div>-->
+                            </div>
+                        </div>
+                        <div class="webhook-option" data-type="wechat">
+                            <div class="webhook-icon">
+                                <i class="fab fa-weixin"></i>
+                            </div>
+                            <div>
+                                <div style="font-weight: 500; font-size: 14px;">企微</div>
+<!--                                <a style="font-size: 12px; color: var(&#45;&#45;text-light);" href="https://help.gitee.com/webhook/webhook-for-wecom-robot">创建机器人</a>-->
+                            </div>
+                        </div>
+                        <div class="webhook-option" data-type="feishu">
+                            <div class="webhook-icon">
+                                <i class="fas fa-feather-alt"></i>
+                            </div>
+                            <div>
+                                <div style="font-weight: 500; font-size: 14px;">飞书</div>
+<!--                                <a style="font-size: 12px; color: var(&#45;&#45;text-light);" href="https://help.gitee.com/webhook/webhook-for-wecom-robot">创建机器人</a>-->
+<!--                                <div style="font-size: 12px; color: var(&#45;&#45;text-light);">通过飞书机器人接收开播通知</div>-->
+                            </div>
+                        </div>
+                    </div>
+                    <a style="font-size: 12px; color: var(--text-light);" href="https://open.dingtalk.com/document/dingstart/custom-bot-creation-and-installation" target="_blank">创建钉钉机器人?</a>
+                    <a style="font-size: 12px; color: var(--text-light);" href="https://help.gitee.com/webhook/webhook-for-wecom-robot" target="_blank">创建企微机器人?</a>
+                    <a style="font-size: 12px; color: var(--text-light);" href="https://open.feishu.cn/document/client-docs/bot-v3/add-custom-bot#461aa643" target="_blank">创建飞书机器人?</a>
+                    <input type="hidden" id="selectedWebhook" value="">
+                </div>
+                <div class="form-group" id="webhookUrlContainer" style="display: none;">
+                    <label class="form-label" for="webhookUrl">Webhook地址</label>
+                    <div style="display: flex; align-items: center;">
+                        <input type="text" class="form-input" id="webhookUrl" placeholder="请输入Webhook地址">
+                        <button type="button" class="btn btn-secondary" id="testWebhookBtn" style="margin-left: 10px; display: none;">测试</button>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <button type="submit" class="btn btn-primary" style="width: 100%; padding: 12px;">
+                        保存更改
+                    </button>
+                </div>
+                <div class="form-group">
+                    <button type="button" class="btn btn-secondary" id="openChangePassword" style="width: 100%; padding: 12px;">
+                        修改密码
+                    </button>
+                </div>
+                <div class="form-group" style="text-align: center;">
+                    <button type="button" class="btn btn-secondary" id="logoutBtn" style="width: 100%; padding: 12px; color: #e25822;">
+                        <i class="fas fa-sign-out-alt"></i> 退出登录
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- 修改密码模态框 -->
+<div class="modal" id="changePasswordModal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 class="modal-title">修改密码</h3>
+            <button class="modal-close" id="closeChangePassword"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="modal-body">
+            <form id="changePasswordForm">
+                <div class="form-group"><label class="form-label" for="oldPassword">旧密码</label><input type="password" class="form-input" id="oldPassword" required></div>
+                <div class="form-group"><label class="form-label" for="changedPassword">新密码</label><input type="password" class="form-input" id="changedPassword" minlength="6" placeholder="至少6位" required></div>
+                <div class="form-group"><label class="form-label" for="changedConfirmPassword">确认新密码</label><input type="password" class="form-input" id="changedConfirmPassword" minlength="6" required></div>
+                <div class="form-group"><button type="submit" class="btn btn-primary" style="width: 100%; padding: 12px;">保存密码</button></div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- 用户详情模态框 -->
+<div class="modal user-detail-modal" id="userDetailModal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 class="modal-title">用户详情</h3>
+            <button class="modal-close" id="closeUserDetailModal">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div class="user-detail">
+                <img alt="用户头像" class="detail-avatar" id="detailAvatar">
+                <div class="detail-info">
+                    <h3 class="detail-name" id="detailName"></h3>
+                    <p class="detail-bio" id="detailBio"></p>
+                    <!-- New Fields -->
+                    <p class="detail-user-id" id="detailUserId"></p>
+                    <p class="detail-registration-time" id="detailRegistrationTime"></p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 主播标签编辑模态框 -->
+<div class="modal tag-editor-modal" id="tagEditorModal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 class="modal-title">编辑标签</h3>
+            <button class="modal-close" id="closeTagEditorModal">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <form id="tagEditorForm">
+                <div class="tag-editor-layout">
+                    <div class="tag-editor-preview-card">
+                        <label class="tag-editor-label" for="tagEditorInput">主播</label>
+                        <div class="tag-editor-title" id="tagEditorTitle"></div>
+                        <div class="tag-editor-preview" id="tagEditorPreview">
+                            <i class="fas fa-tag"></i>
+                            <span>添加一个标签</span>
+                        </div>
+                        <div class="tag-editor-hint" id="tagEditorHint">当前主播还没有标签，输入后即可保存。</div>
+                    </div>
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label class="form-label" for="tagEditorInput">标签内容</label>
+                        <input type="text" class="form-input" id="tagEditorInput" maxlength="16" placeholder="例如：人气担当 / 深夜档 / 常驻">
+                    </div>
+                    <div class="tag-editor-actions">
+                        <button type="button" class="btn btn-secondary" id="tagEditorCancelBtn">取消</button>
+                        <button type="submit" class="btn btn-primary" id="tagEditorSaveBtn">保存标签</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+
+
+</body>
+</html>

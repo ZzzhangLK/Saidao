@@ -1,0 +1,130 @@
+﻿const { API_BASE_URL, N8N_BASE_URL, TOKEN_KEY } = window.SaidaoConfig;
+
+let fingerprintPromise;
+window.getFingerprint = () => {
+    if (!fingerprintPromise) fingerprintPromise = (async () => {
+        const stored = localStorage.getItem('fingerprint');
+        if (stored) return stored;
+        let fp;
+        try {
+            const agent = await window.FingerprintJS?.load();
+            fp = (await agent?.get())?.visitorId;
+        } catch (error) { console.warn('指纹生成失败，降级使用 UUID', error); }
+        fp ||= crypto.randomUUID();
+        localStorage.setItem('fingerprint', fp);
+        return fp;
+    })();
+    return fingerprintPromise;
+};
+
+async function request(url, {
+    method = 'GET',
+    body,
+    withAuth = false,
+    fromN8N = false,
+    headers = {},
+    showLoading: useLoading = true
+} = {}) {
+    if (useLoading && typeof window.showLoading === 'function') {
+        window.showLoading();
+    }
+
+    try {
+        const fingerprint = typeof window.getFingerprint === 'function'
+            ? await window.getFingerprint()
+            : '';
+
+        const finalHeaders = {
+            Accept: 'application/json',
+            fp: fingerprint,
+            ...headers
+        };
+
+        const isFormData = body instanceof FormData;
+        if (body && !isFormData) {
+            finalHeaders['Content-Type'] = 'application/json';
+        }
+
+        if (withAuth) {
+            const token = localStorage.getItem(TOKEN_KEY);
+            if (token) {
+                finalHeaders.Authorization = token;
+            }
+        }
+
+        const baseUrl = fromN8N ? N8N_BASE_URL : API_BASE_URL;
+        const response = await fetch(`${baseUrl}${url}`, {
+            method,
+            credentials: 'include',
+            headers: finalHeaders,
+            body: isFormData ? body : JSON.stringify(body)
+        });
+
+        const result = await response.json();
+
+        if (response.status === 401) {
+            if (typeof window.openLoginModal === 'function') {
+                window.openLoginModal();
+            }
+            if (window.Toast?.show) {
+                window.Toast.show('请先登录', 'error');
+            }
+            throw new Error('请先登录');
+        }
+
+        if (!response.ok) {
+            const message = result.message || '请求失败';
+            if (window.Toast?.show) {
+                window.Toast.show(message, 'error');
+            }
+            throw new Error(message);
+        }
+
+        return result;
+    } finally {
+        if (useLoading && typeof window.hideLoading === 'function') {
+            window.hideLoading();
+        }
+    }
+}
+
+window.request = request;
+window.ApiEndpoints = {
+    saidao: () => request('/saidao/', { withAuth: true }),
+    showUserDetail: (userId) => request(`/user/${userId}`),
+    currentUser: () => request('/user/', { withAuth: true }),
+    login: (data) => request('/user/login', { method: 'POST', body: data }),
+    allocate: (data) => request('/user/allocate', { method: 'POST', body: data }),
+    changePassword: (data) => request('/user/changePassword', { method: 'POST', body: data, withAuth: true }),
+    notice: () => request('/notice', { showLoading: false }),
+    sendVerificationCode: (data) => request('/user/sendVerificationCode', { method: 'POST', body: data }),
+    profileUpdate: (data) => request('/user/update', { method: 'POST', body: data, withAuth: true }),
+    chatFilterConfig: () => request('/user/chatFilterConfig', { withAuth: true, showLoading: false }),
+    updateChatFilterConfig: (data) => request('/user/chatFilterConfig', { method: 'POST', body: data, withAuth: true, showLoading: false }),
+    chatBan: (data) => request('/user/chatBan', { method: 'POST', body: data, withAuth: true }),
+    messageDelete: (messageId) => request('/message/delete', { method: 'POST', body: { messageId }, withAuth: true }),
+    updateOptions: (data) => request('/saidao/options', { method: 'POST', body: data, withAuth: true }),
+    updateSaidaoTag: (data) => request('/saidao/tag', { method: 'POST', body: data, withAuth: true }),
+    clickSaidao: (saidaoId) => request(`/saidao/click?saidaoId=${saidaoId}`, { method: 'POST', showLoading: false }),
+    uploadImages: (data) => request('/api/image/upload', { method: 'POST', body: data, withAuth: true }),
+    uploadVoice: (data) => request('/api/voice/upload', { method: 'POST', body: data, withAuth: true, showLoading: false }),
+    queryEmojis: (group) => request(`/emoji/${group}`, { withAuth: true }),
+    messageHistory: (messageId) => request(`/message/history?messageId=${encodeURIComponent(messageId)}`, { withAuth: true, showLoading: false }),
+    chatMoments: () => request('/message/moments', { withAuth: true, showLoading: false }),
+    chatPolls: () => request('/chat/polls', { withAuth: true, showLoading: false }),
+    chatPollStatus: () => request('/chat/polls/status', { showLoading: false }),
+    createChatPoll: (data) => request('/chat/polls', { method: 'POST', body: data, withAuth: true, showLoading: false }),
+    voteChatPoll: (id, optionIds) => request(`/chat/polls/${id}/ballots`, { method: 'POST', body: { optionIds }, withAuth: true, showLoading: false }),
+    messageHistoryWindow: (params) => request(`/message/history/window?${new URLSearchParams(params)}`, { withAuth: true, showLoading: false }),
+    uploadEmojis: (data) => request('/emoji/upload', { method: 'POST', body: data, withAuth: true }),
+    testWebhook: (data) => request('/webhook/testWebhook', { method: 'POST', body: data, withAuth: true, fromN8N: true }),
+    getCaptcha: () => request('/user/captcha'),
+    dailyReportList: () => request('/dailyReport/list', { showLoading: false }),
+    
+    // 视频点播相关
+    videoRequestSubmit: (data) => request('/videoRequest/submit', { method: 'POST', body: data, withAuth: true }),
+    videoRequestVote: (data) => request('/videoRequest/vote', { method: 'POST', body: data, withAuth: true }),
+    videoRequestList: () => request('/videoRequest/list', { showLoading: false }),
+    videoRequestSkip: () => request('/videoRequest/skip', { method: 'POST', withAuth: true }),
+    videoRequestDelete: (videoRequestId) => request(`/videoRequest/delete?videoRequestId=${videoRequestId}`, { method: 'POST', withAuth: true })
+};
